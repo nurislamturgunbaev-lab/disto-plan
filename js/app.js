@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.0.0';
+const VERSION = '2.0.1';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -806,7 +806,7 @@ cv.addEventListener('pointerdown', (e) => {
 });
 cv.addEventListener('pointermove', (e) => {
   const p = local(e);
-  if (S.draft && ptrs.size === 0) { S.draft.hover = snap(p.x, p.y, draftFrom()); requestDraw(); return; }
+  if (S.draft && ptrs.size === 0) { if (e.pointerType === 'mouse') { S.draft.hover = snap(p.x, p.y, draftFrom()); requestDraw(); } return; }
   if (!ptrs.has(e.pointerId)) return;
   ptrs.set(e.pointerId, p);
   if (!gesture) return;
@@ -843,7 +843,7 @@ cv.addEventListener('pointermove', (e) => {
   }
   if (gesture.type === 'pan') {
     const v = V(); v.ox = gesture.v.ox + dx; v.oy = gesture.v.oy + dy;
-    if (S.draft) S.draft.hover = snap(p.x, p.y, draftFrom());
+    if (S.draft && e.pointerType === 'mouse') S.draft.hover = snap(p.x, p.y, draftFrom());
     requestDraw();
   } else if (gesture.type === 'drag') {
     const { it, part } = gesture.h, o = gesture.orig, s = V().s;
@@ -1121,8 +1121,8 @@ function skPrevDir(it, i) {
   if (it.closed) return it.dirs[it.dirs.length - 1];
   return it.dirs[0];
 }
-function pickSketchSeg(sx, sy, closedOnly) {
-  let best = null, bd = 16;
+function pickSketchSeg(sx, sy, closedOnly, tol = 18) {
+  let best = null, bd = tol;
   for (const it of curItems()) {
     if (it.kind !== 'sketch' || !it.dirs || (closedOnly && !it.closed)) continue;
     for (const sg of sketchSegs(it)) {
@@ -1732,8 +1732,43 @@ function openGeom(it, abCache) {
   return { p0, p1, n: { x: d.nx, y: d.ny }, th: openThick(it.block, d), w, d, c: { x: ax + ux * c, y: ay + uy * c } };
 }
 /** Ближайшая стена под пальцем: стены чертежа и начерченные линии */
+function pointInPoly(x, y, p) {
+  let c = false; const n = p.length / 2;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = p[i * 2], yi = p[i * 2 + 1], xj = p[j * 2], yj = p[j * 2 + 1];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
 function pickWall(sx, sy) {
-  let best = null, bd = 22;
+  const direct = pickWallNear(sx, sy, 34);
+  if (direct) return direct;
+  // нажали внутри комнаты — ближайшая стена этой комнаты
+  const w = screenToWorld(sx, sy);
+  let best = null, bd = Infinity;
+  for (const it of curItems()) {
+    if (it.kind !== 'sketch' || !it.dirs || !it.closed || !pointInPoly(w.x, w.y, it.pts)) continue;
+    for (const sg of sketchSegs(it)) {
+      const a = w2s(sg.ax, sg.ay), b = w2s(sg.bx, sg.by), d = distSeg(sx, sy, a.x, a.y, b.x, b.y);
+      if (d < bd) { bd = d; best = sg; }
+    }
+  }
+  if (!best && hasDrawing()) {
+    const W = wallsOf();
+    for (const room of W.rooms) {
+      if (!room.closed) continue;
+      const poly = room.segs.flatMap((q) => [q.ax, q.ay]);
+      if (!pointInPoly(w.x, w.y, poly)) continue;
+      for (const sg of room.segs) {
+        const a = w2s(sg.ax, sg.ay), b = w2s(sg.bx, sg.by), d = distSeg(sx, sy, a.x, a.y, b.x, b.y);
+        if (d < bd) { bd = d; best = { key: sg.key, ax: sg.ax, ay: sg.ay, bx: sg.bx, by: sg.by }; }
+      }
+    }
+  }
+  return best;
+}
+function pickWallNear(sx, sy, tol) {
+  let best = null, bd = tol;
   if (hasDrawing()) {
     const sg = pickSeg(sx, sy);
     if (sg) {
@@ -1741,7 +1776,7 @@ function pickWall(sx, sy) {
       best = { key: sg.key, ax: sg.ax, ay: sg.ay, bx: sg.bx, by: sg.by }; bd = distSeg(sx, sy, a.x, a.y, b.x, b.y);
     }
   }
-  const hs = pickSketchSeg(sx, sy, false);
+  const hs = pickSketchSeg(sx, sy, false, tol);
   if (hs) {
     const a = w2s(hs.sg.ax, hs.sg.ay), b = w2s(hs.sg.bx, hs.sg.by), dd = distSeg(sx, sy, a.x, a.y, b.x, b.y);
     if (dd <= bd) best = hs.sg;
@@ -1750,10 +1785,11 @@ function pickWall(sx, sy) {
 }
 function placeOpening(type, sx, sy) {
   const sg = pickWall(sx, sy);
-  if (!sg) { toast('Нажмите точно на стену'); return null; }
+  if (!sg) { toast('Нажмите на стену или внутри комнаты у стены', true); return null; }
   pushUndo();
   const it = { id: uid(), kind: 'open', otype: type, key: sg.key, t: 0.5, w: OPEN_W[type], block: S.block, floor: S.floor, t0: Date.now() };
   S.items.push(it); save(); draw();
+  toast(type === 'window' ? 'Окно поставлено' : 'Дверь поставлена', true);
   return it;
 }
 /** Рисует условное обозначение. tr(x,y) → экранная точка; scale — px на единицу чертежа */
@@ -2506,8 +2542,8 @@ function setFocus(on) {
   refreshSheet();
   requestAnimationFrame(() => { resize(); if (S.selSeg) ensureVisible(wallsOf().byKey.get(S.selSeg)); draw(); });
 }
-function toast(s) {
-  if (focusMode) return;
+function toast(s, force) {
+  if (focusMode && !force) return;
   const t = $('toast'); t.textContent = s; t.hidden = false;
   clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 2600);
 }
