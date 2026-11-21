@@ -403,11 +403,10 @@ body.arrange [data-fl] { outline: 2px dashed var(--accent2); outline-offset: 2px
 .shareItem.off { opacity: .45; pointer-events: none; }
 .toast, .hint { pointer-events: none; }
 
-/* левый пульт — в один ряд */
-.dirPad { flex-direction: row !important; align-items: center; gap: 6px; }
+/* левый пульт — одной строкой вдоль левого края, по середине экрана */
+.dirPad { flex-direction: column !important; align-items: center; gap: 6px; top: 50%; bottom: auto !important; transform: translateY(-50%); }
 .dirPad .dRow { display: contents; }
-.dirPad .laserBtn { height: 46px; padding: 0 8px; flex-direction: column; gap: 2px; font-size: 9px; }
+.dirPad .laserBtn { width: 48px; height: 46px; padding: 0; flex-direction: column; gap: 2px; font-size: 8px; order: 0; }
 .dirPad .dRow button[data-r="l"] { order: 1; } .dirPad .dRow button[data-r="s"] { order: 2; }
 .dirPad .dRow button[data-r="r"] { order: 3; } .dirPad #dirUndo { order: 4; }
-.dirPad .laserBtn { order: 0; }
 .dirPad .dRow button { width: 48px; }
