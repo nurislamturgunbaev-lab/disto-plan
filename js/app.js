@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.0.6';
+const VERSION = '2.0.7';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -788,12 +788,6 @@ cv.addEventListener('pointerdown', (e) => {
       if (Math.hypot(q.x - p.x, q.y - p.y) < 26) { gesture = { type: 'slope', sh, start: p, moved: false }; return; }
     }
   }
-  // кончик текущей линии: потянуть пальцем — поменять направление
-  const tp = tipTarget();
-  if (tp && !S.openArm) {
-    const q = w2s(tp.tip.x, tp.tip.y);
-    if (Math.hypot(q.x - p.x, q.y - p.y) < 32) { gesture = { type: 'tip', tp, start: p, moved: false }; return; }
-  }
   // в режимах черчения/проёмов/рулетки нажатие идёт в инструмент; перетаскивать можно только двери и окна
   const freeHit = ['select', 'point', 'line', 'walls'].includes(S.tool) && !S.openArm;
   const op0 = !S.draft ? pickOpen(p.x, p.y) : null;
@@ -831,22 +825,7 @@ cv.addEventListener('pointermove', (e) => {
   }
   const dx = p.x - gesture.start.x, dy = p.y - gesture.start.y;
   if (!gesture.moved && Math.hypot(dx, dy) < 7) return;
-  if (!gesture.moved) { gesture.moved = true; if (gesture.type === 'drag' || gesture.type === 'slope' || gesture.type === 'tip') pushUndo(); }
-  if (gesture.type === 'tip') {
-    const { it, k } = gesture.tp;
-    const a = { x: it.pts[k * 2], y: it.pts[k * 2 + 1] };
-    const w = screenToWorld(p.x, p.y);
-    let deg = (Math.atan2(w.y - a.y, w.x - a.x) * 180) / Math.PI;
-    deg = S.settings.polar ? Math.round(deg / 5) * 5 : Math.round(deg / 90) * 90; // шаг 5° с «УГОЛ», иначе 90°
-    if (it.dirs[k] !== deg) {
-      it.dirs[k] = ((deg % 360) + 360) % 360;
-      rebuildSketch(it);
-      if (S.draft?.itemId === it.id) S.draft.pts = it.pts.slice();
-      if (navigator.vibrate) navigator.vibrate(8);
-    }
-    requestDraw();
-    return;
-  }
+  if (!gesture.moved) { gesture.moved = true; if (gesture.type === 'drag' || gesture.type === 'slope') pushUndo(); }
   if (gesture.type === 'slope') {
     const { sh } = gesture;
     const w = screenToWorld(p.x, p.y);
@@ -908,10 +887,6 @@ function endPtr(e) {
   if (gesture.type === 'pinch') { if (ptrs.size === 0) gesture = null; else gesture = { type: 'none' }; return; }
   const g = gesture; gesture = null;
   if (g.type === 'slope') { if (g.moved) { save(); hint(''); } draw(); return; }
-  if (g.type === 'tip') {
-    if (g.moved) { save(); toast('Направление изменено', true); draw(); return; }
-    tap(p); draw(); return;
-  }
   if (g.type === 'drag') {
     snapMark = null;
     if (g.moved) { save(); refreshSheet(); }
@@ -2497,21 +2472,6 @@ function currentDir() {
   if (S.tool === 'walls' && S.selSeg) { const sg = wallsOf().byKey.get(S.selSeg); return sg ? wallCurDir(sg) : null; }
   return null;
 }
-/** Линия, у которой можно потянуть кончик: текущая черчения или стена, которую сейчас меряем */
-function tipTarget() {
-  if (S.tool !== 'sketch') return null;
-  const sk = skmItem();
-  if (sk && sk.dirs) {
-    const k = S.skm.i, n = sk.pts.length / 2, j = (k + 1) % n;
-    return { it: sk, k, tip: { x: sk.pts[j * 2], y: sk.pts[j * 2 + 1] } };
-  }
-  const it = skItem();
-  if (S.draft && it?.dirs?.length && !it.closed) {
-    const k = it.dirs.length - 1;
-    return { it, k, tip: { x: it.pts[(k + 1) * 2], y: it.pts[(k + 1) * 2 + 1] } };
-  }
-  return null;
-}
 /** «Голова змейки» — конец текущей линии (мир) */
 function currentHead() {
   if (S.tool === 'sketch') {
@@ -2526,7 +2486,6 @@ function currentHead() {
 /** Поворот «змейкой»: текущая линия смотрит вверх, её конец стоит в центре экрана, план движется вокруг; кнопки не крутятся */
 function stepRotation() {
   const v = V();
-  if (gesture && gesture.type === 'tip') return false;
   let target = 0, head = null;
   if (S.settings.rotate) {
     const d = currentDir(); if (d == null) return false;
