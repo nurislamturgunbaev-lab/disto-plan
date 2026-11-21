@@ -336,3 +336,15 @@ tr.clk:active { background: var(--bg); }
   background: var(--top); color: #fff; padding: 10px 12px; border-radius: 14px; font-size: 13px; box-shadow: var(--shadow); }
 .homeTip span { flex: 1; }
 .homeTip button { color: #fff; font-size: 16px; width: 28px; height: 28px; }
+
+/* режим «полный экран»: только план, замер идёт сам */
+.focusT { bottom: 212px; }
+.focusExit { display: none; }
+body.focus .top, body.focus .subbar, body.focus .bottom, body.focus .prog, body.focus .hud, body.focus .hint,
+body.focus .flt, body.focus .fit, body.focus .sheet, body.focus .toast, body.focus .draftbar, body.focus .dpad,
+body.focus .homeTip, body.focus .measure, body.focus .readyBar { display: none !important; }
+body.focus .focusExit {
+  display: grid; place-items: center; position: absolute; z-index: 30;
+  top: calc(8px + var(--safeT)); right: 8px; width: 34px; height: 34px; border-radius: 10px;
+  background: rgba(20,33,61,.35); color: #fff; opacity: .6;
+}

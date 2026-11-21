@@ -5,7 +5,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '1.6.1';
+const VERSION = '1.7.0';
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
 
@@ -1499,7 +1499,7 @@ function mergeTurn(key) {
 let askingTurn = false;
 /** Во время замера: если следующая стена — короткий выступ, спросить, удалить ли поворот */
 function maybeAskTurn() {
-  if (!S.session || askingTurn || !S.selSeg) return;
+  if (focusMode || !S.session || askingTurn || !S.selSeg) return;
   const J = jogInfo(S.selSeg);
   if (!J?.isJog || isDone(segItem(S.selSeg))) return;
   askingTurn = true;
@@ -1688,6 +1688,9 @@ function bindTools() {
     else { S.settings.snapModes[k] = !S.settings.snapModes[k]; if (S.settings.snapModes[k]) S.settings.snap = true; }
     syncSnapUI(); save();
   };
+  $('btnFocus').onclick = () => setFocus(true);
+  $('btnFocusExit').onclick = () => setFocus(false);
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && focusMode && !/iPhone/.test(navigator.userAgent)) setFocus(false); });
   $('btnSnap').onclick = () => { S.settings.snap = !S.settings.snap; syncSnapUI(); save(); toast('Привязка ' + (S.settings.snap ? 'включена' : 'выключена')); };
   $('btnOrtho').onclick = () => { S.settings.ortho = !S.settings.ortho; syncSnapUI(); save(); toast('Орто ' + (S.settings.ortho ? 'включено' : 'выключено')); };
   syncToolUI(); syncSnapUI();
@@ -1725,12 +1728,30 @@ function ask(text, okText = 'Да', danger = false) {
 }
 const notice = (text) => ask(text, 'OK');
 let toastT;
+let focusMode = false;
+function setFocus(on) {
+  focusMode = on;
+  document.body.classList.toggle('focus', on);
+  if (on) {
+    $('toolsPop').hidden = true;
+    if (S.tool !== 'walls') setTool('walls');
+    S.session = true; S.sheetFull = false;
+    if (!S.selSeg) gotoSeg(1, true, true);
+    try { document.documentElement.requestFullscreen?.().catch(() => {}); } catch (e) { /* iPhone не поддерживает — достаточно скрыть панели */ }
+  } else {
+    try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { /* */ }
+  }
+  refreshSheet();
+  requestAnimationFrame(() => { resize(); if (S.selSeg) ensureVisible(wallsOf().byKey.get(S.selSeg)); draw(); });
+}
 function toast(s) {
+  if (focusMode) return;
   const t = $('toast'); t.textContent = s; t.hidden = false;
   clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 2600);
 }
 let hintT;
 function hint(s) {
+  if (focusMode) return;
   $('hint').textContent = s || '';
   clearTimeout(hintT); if (s) hintT = setTimeout(() => ($('hint').textContent = ''), 6000);
 }
@@ -2447,6 +2468,7 @@ function bindEntry() {
       return;
     }
     if (e.key === 'Backspace' && kb) { e.preventDefault(); kb = kb.slice(0, -1); inp.value = kb; return; }
+    if (e.key === 'Escape' && focusMode) { setFocus(false); return; }
     if (e.key === 'Escape') { S.draft = null; updateDraftBar(); S.selSeg = null; select(null); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && S.selId) { removeItem(S.selId); }
     else if (e.key === 'z' && (e.ctrlKey || e.metaKey)) doUndo();
