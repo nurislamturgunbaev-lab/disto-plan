@@ -30,12 +30,13 @@
   --shadow: 0 8px 28px rgba(0, 0, 0, .5);
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden; overscroll-behavior: none; }
+html, body { margin: 0; height: 100%; background: var(--card); color: var(--ink); overflow: hidden; overscroll-behavior: none; }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; border: 0; background: none; }
 [hidden] { display: none !important; }
 
-#app { display: flex; flex-direction: column; height: 100vh; height: -webkit-fill-available; height: 100dvh; }
+/* на весь экран: в режиме «На экран Домой» на iPhone 100vh короче экрана на высоту статус-бара */
+#app { position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; }
 
 /* верх */
 .top {
@@ -112,7 +113,7 @@ button { cursor: pointer; border: 0; background: none; }
 .draftbar .primary { background: var(--accent2); color: #fff; }
 
 /* низ */
-.bottom { background: var(--card); border-top: 1px solid var(--line); padding-bottom: var(--safeB); }
+.bottom { background: var(--card); border-top: 1px solid var(--line); padding-bottom: max(6px, var(--safeB)); }
 .entry { display: flex; gap: 8px; padding: 8px 10px 4px; }
 .entry input {
   flex: 1; min-width: 0; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg);

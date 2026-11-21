@@ -5,7 +5,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne } from './zip.js';
 
-const VERSION = '1.5.0';
+const VERSION = '1.5.1';
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
 
