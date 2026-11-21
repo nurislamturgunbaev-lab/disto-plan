@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.1.0';
+const VERSION = '2.1.1';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -3427,6 +3427,20 @@ function drawTurnTip(c, v, pal) {
   c.save();
   c.strokeStyle = '#1f6feb'; c.lineWidth = 5; c.lineCap = 'round';
   c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+  // угол наклона: дуга от продолжения предыдущей линии до этой + подпись
+  const first = k === 0 && !it.closed;
+  const prev = first ? 0 : skPrevDir(it, k);
+  let rel = it.dirs[k] - prev; while (rel > 180) rel -= 360; while (rel <= -180) rel += 360;
+  const sa = -(prev * Math.PI) / 180 + (v.rot || 0), ea = -(it.dirs[k] * Math.PI) / 180 + (v.rot || 0);
+  if (Math.abs(rel) > 0.01) {
+    c.save(); c.strokeStyle = '#1f6feb'; c.lineWidth = 2; c.setLineDash([5, 4]);
+    const ex = Math.cos(sa) * 70, ey = Math.sin(sa) * 70;
+    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(a.x + ex, a.y + ey); c.stroke(); c.setLineDash([]);
+    c.lineWidth = 2.5; c.beginPath(); c.arc(a.x, a.y, 42, sa, ea, rel > 0); c.stroke(); c.restore();
+  }
+  const mid = (sa + ea) / 2;
+  const txt = first ? `${Math.round(it.dirs[k])}°` : rel === 0 ? '0° прямо' : `${rel > 0 ? '↺' : '↻'} ${Math.abs(Math.round(rel * 10) / 10).toString().replace('.', ',')}°`;
+  pill(c, a.x + Math.cos(mid) * 72, a.y + Math.sin(mid) * 72, txt, '#1f6feb', '#fff', { size: 13 });
   c.fillStyle = 'rgba(31,111,235,.18)'; c.beginPath(); c.arc(b.x, b.y, 22, 0, Math.PI * 2); c.fill();
   c.fillStyle = '#1f6feb'; c.strokeStyle = '#fff'; c.lineWidth = 3;
   c.beginPath(); c.arc(b.x, b.y, 11, 0, Math.PI * 2); c.fill(); c.stroke();
