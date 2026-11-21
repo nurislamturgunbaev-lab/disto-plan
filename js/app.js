@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.0.2';
+const VERSION = '2.0.3';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -1792,12 +1792,31 @@ function placeOpening(type, sx, sy) {
   toast(type === 'window' ? 'Окно поставлено' : 'Дверь поставлена', true);
   return it;
 }
+/** Засечки двери: [x, y, половина длины] в единицах чертежа — края короче, середина длиннее */
+function doorTicks(g) {
+  const u = (UNIT_MM[S.plan.unit] || 1);
+  const m = (v) => (v * 1000) / u; // метры → единицы чертежа
+  const off = g.th / 2;
+  const at = (t) => [g.p0.x + (g.p1.x - g.p0.x) * t - g.n.x * off, g.p0.y + (g.p1.y - g.p0.y) * t - g.n.y * off];
+  const sh = Math.max(off, 0) + m(0.12), lg = Math.max(off, 0) + m(0.28);
+  return [[...at(0), sh], [...at(0.5), lg], [...at(1), sh]];
+}
 /** Рисует условное обозначение. tr(x,y) → экранная точка; scale — px на единицу чертежа */
 function drawOpeningSym(c, it, g, tr, scale, ink, paper, opts = {}) {
   const P0 = tr(g.p0.x, g.p0.y), P1 = tr(g.p1.x, g.p1.y);
   const Q0 = tr(g.p0.x - g.n.x * g.th, g.p0.y - g.n.y * g.th);
   const Q1 = tr(g.p1.x - g.n.x * g.th, g.p1.y - g.n.y * g.th);
   c.save();
+  if (it.otype !== 'window') {
+    // дверь: стена не прерывается, поперёк — короткие засечки по краям и длинная в середине
+    c.lineWidth = (opts.lw || 1.3) * 1.2; c.strokeStyle = ink; c.lineCap = 'round';
+    for (const [x, y, h] of doorTicks(g)) {
+      const a = tr(x - g.n.x * h, y - g.n.y * h), b = tr(x + g.n.x * h, y + g.n.y * h);
+      c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+    }
+    c.restore();
+    return { P0, P1, Q0, Q1 };
+  }
   // стереть стену в проёме
   c.fillStyle = paper;
   c.beginPath(); c.moveTo(P0.x, P0.y); c.lineTo(P1.x, P1.y); c.lineTo(Q1.x, Q1.y); c.lineTo(Q0.x, Q0.y); c.closePath();
@@ -2673,6 +2692,9 @@ function floorsWithData(block = S.block) {
 function openingPaths(it, g) {
   const o = (p) => ({ x: p.x - g.n.x * g.th, y: p.y - g.n.y * g.th });
   const P0 = g.p0, P1 = g.p1, Q0 = o(P0), Q1 = o(P1);
+  if (it.otype !== 'window') {
+    return doorTicks(g).map(([x, y, h]) => [{ x: x - g.n.x * h, y: y - g.n.y * h }, { x: x + g.n.x * h, y: y + g.n.y * h }]);
+  }
   const out = [[P0, Q0], [P1, Q1]];
   if (it.otype === 'window') {
     out.push([P0, P1], [Q0, Q1], [{ x: (P0.x + Q0.x) / 2, y: (P0.y + Q0.y) / 2 }, { x: (P1.x + Q1.x) / 2, y: (P1.y + Q1.y) / 2 }]);
