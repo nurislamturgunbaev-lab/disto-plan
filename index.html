@@ -40,6 +40,7 @@
 
   <main class="stage" id="stage">
     <canvas id="cv"></canvas>
+    <div class="prog" id="prog" hidden></div>
     <div class="hud">
       <div class="last" id="lastBox" hidden>
         <small id="lastSrc">DISTO</small>
@@ -69,7 +70,7 @@
     <div class="grid2">
       <label class="field big">
         <span>Замер, м</span>
-        <input id="shValue" inputmode="decimal" autocomplete="off" placeholder="ожидает DISTO">
+        <input id="shValue" inputmode="decimal" autocomplete="off" placeholder="?">
       </label>
       <label class="field">
         <span>Проект, м</span>
@@ -83,8 +84,14 @@
         <select id="shDir"><option value="down">↓ вниз</option><option value="up">↑ вверх</option></select></label>
       <label class="field"><span>До этажа</span><input id="shTo" inputmode="numeric"></label>
     </div>
-    <label class="field"><span>Примечание</span><input id="shNote" autocomplete="off" placeholder="например: шахта лифта, ось 3/Б"></label>
-    <div class="row">
+    <label class="field" id="shNoteWrap"><span>Примечание</span><input id="shNote" autocomplete="off" placeholder="например: шахта лифта, ось 3/Б"></label>
+    <div class="row" id="shNav" hidden>
+      <button class="btn" id="shPrev">◀</button>
+      <button class="btn primary" id="shNextOpen">Пропустить →</button>
+      <button class="btn" id="shNext">▶</button>
+      <button class="btn danger" id="shClear" aria-label="Очистить замер">✕</button>
+    </div>
+    <div class="row" id="shActions">
       <button class="btn" id="shRemeasure">◎ Перемерить</button>
       <button class="btn danger" id="shDelete">Удалить</button>
     </div>
@@ -98,7 +105,8 @@
       <button type="submit" class="primary" aria-label="Записать">✓</button>
     </form>
     <nav class="tools" id="tools">
-      <button data-tool="select" class="on"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Выбор</span></button>
+      <button data-tool="walls" class="on"><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 5h18" stroke="currentColor" stroke-width="4"/><path d="M8 11h8M8 11l2-2M8 11l2 2M16 11l-2-2M16 11l-2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Стены</span></button>
+      <button data-tool="select"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Выбор</span></button>
       <button data-tool="point"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3" fill="currentColor"/><path d="M12 21s-7-6.5-7-11a7 7 0 0114 0c0 4.5-7 11-7 11z" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Точка</span></button>
       <button data-tool="line"><svg viewBox="0 0 24 24"><path d="M4 18L20 6M4 14v8M20 2v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Размер</span></button>
       <button data-tool="sketch"><svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Чертить</span></button>
@@ -154,6 +162,12 @@
       <label class="field"><span>Высота этажа, м (для проектного значения)</span><input id="setFloorH" inputmode="decimal" placeholder="напр. 3,00"></label>
       <label class="field"><span>Тема</span><select id="setTheme"><option value="light">Светлая</option><option value="dark">Тёмная</option></select></label>
     </div>
+    <h3>Обмер стен</h3>
+    <label class="check"><input type="checkbox" id="setAutoNext" checked> После замера переходить к следующей стене</label>
+    <label class="check"><input type="checkbox" id="setWallLabels" checked> Показывать длины по чертежу</label>
+    <label class="check"><input type="checkbox" id="setWallCols"> Обмерять колонны</label>
+    <label class="field"><span>Не считать стенами отрезки короче, м</span><input id="setWallMin" inputmode="decimal"></label>
+    <h3>Отображение</h3>
     <label class="check"><input type="checkbox" id="setOtherFloors"> Показывать замеры других этажей (бледно)</label>
     <label class="check"><input type="checkbox" id="setSnap" checked> Привязка к углам чертежа</label>
     <label class="check"><input type="checkbox" id="setBeep" checked> Звук и вибрация при записи</label>

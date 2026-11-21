@@ -1,8 +1,9 @@
 import DEFAULT_PLAN from './default-plan.js';
 import { Disto } from './disto.js';
 import { DxfWriter } from './dxf.js';
+import { buildWalls } from './walls.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
 
@@ -52,12 +53,13 @@ const S = {
   floor: 16,
   dir: 'down',
   toFloor: 15,
-  tool: 'select',
+  tool: 'walls',
+  selSeg: null, // ключ выбранной стены
   items: [],
   selId: null,
   armedId: null,
   draft: null, // {kind:'line'|'sketch', pts:[]}
-  settings: { floorH: 0, theme: 'light', otherFloors: false, snap: true, beep: true },
+  settings: { floorH: 0, theme: 'light', otherFloors: false, snap: true, beep: true, autoNext: true, wallMin: 0.15, wallColumns: false, wallLabels: true },
   views: {},
   undo: [],
   lastMeasure: null,
@@ -102,6 +104,8 @@ function autoDesign(it) {
     it.design = S.settings.floorH > 0 && it.toFloor != null ? Math.abs(it.floor - it.toFloor) * S.settings.floorH : null;
   } else if (it.kind === 'line') {
     it.design = Math.hypot(it.x2 - it.x, it.y2 - it.y) * unitM();
+  } else if (it.kind === 'seg') {
+    const sg = wallsOf(it.block).byKey.get(it.key); if (sg) it.design = sg.len;
   }
 }
 function addItem(it) {
@@ -122,6 +126,7 @@ function removeItem(id) {
   pushUndo();
   S.items = S.items.filter((i) => i.id !== id);
   if (S.selId === id) select(null);
+  if (S.selSeg) refreshSheet();
   save(); draw();
 }
 const visibleItems = () => S.items.filter((i) => i.block === S.block && (i.floor === S.floor || S.settings.otherFloors));
@@ -139,6 +144,8 @@ function onMeasure(meters, src) {
   let target = null;
   const sel = S.items.find((i) => i.id === S.selId);
   if (S.armedId) target = S.items.find((i) => i.id === S.armedId);
+  if (!target && S.selSeg && !sel) { recordSeg(S.selSeg, meters, src); return; }
+  if (!target && !sel && S.tool === 'walls') { const k = firstOpenSeg(); if (k) { S.selSeg = k; recordSeg(k, meters, src); return; } }
   if (!target && sel && sel.kind !== 'sketch' && sel.value == null) target = sel;
   if (!target) target = curItems().filter((i) => i.kind !== 'sketch' && i.value == null).sort((a, b) => a.t - b.t)[0];
 
@@ -229,7 +236,8 @@ function prepBlock(b) {
     const column = closed && size < diag * 0.03 && Math.min(x1 - x0, y1 - y0) > size * 0.5;
     return { ...q, z: closed ? 1 : 0, column };
   });
-  b._prep = { polys, verts, diag };
+  const walls = buildWalls(polys, unitM(), { minLen: S.settings.wallMin, columns: S.settings.wallColumns });
+  b._prep = { polys, verts, diag, walls };
   return b._prep;
 }
 
@@ -408,7 +416,8 @@ function draw() {
   ctx.fillRect(0, 0, cv.width, cv.height);
   const v = V();
   drawPlan(ctx, blk(), v, pal);
-  drawItems(ctx, v, pal, visibleItems());
+  drawWalls(ctx, blk(), v, pal);
+  drawItems(ctx, v, pal, visibleItems().filter((i) => i.kind !== 'seg'));
   // черновик
   if (S.draft) {
     const d = S.draft;
@@ -427,7 +436,8 @@ function draw() {
   }
   // масштабная линейка
   scaleBar(ctx, v, pal);
-  if (curItems().some((i) => i.value == null && i.kind === 'point')) requestDraw();
+  if (S.selSeg || curItems().some((i) => i.value == null && i.kind === 'point')) requestDraw();
+  updateProgress();
 }
 let raf = 0;
 function requestDraw() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
@@ -468,7 +478,7 @@ function distSeg(px, py, ax, ay, bx, by) {
 }
 function hit(sx, sy) {
   const v = V();
-  const items = curItems().slice().reverse();
+  const items = curItems().filter((i) => i.kind !== 'seg').reverse();
   const sel = items.find((i) => i.id === S.selId);
   // ручки выбранного
   if (sel) {
@@ -608,6 +618,7 @@ let lastTap = 0;
 function tap(p) {
   const now = Date.now();
   const dbl = now - lastTap < 320; lastTap = now;
+  if (S.tool === 'walls') { const sg = pickSeg(p.x, p.y); selectSeg(sg ? sg.key : null); return; }
   if (S.tool === 'select') { select(null); return; }
   const w = snap(p.x, p.y);
   if (S.tool === 'point') {
@@ -653,15 +664,19 @@ function updateDraftBar() {
 /* ---------- выбор и карточка ---------- */
 function select(id) {
   S.selId = id;
+  if (id) S.selSeg = null;
   if (S.armedId && S.armedId !== id) S.armedId = null;
   refreshSheet();
   draw();
 }
 function refreshSheet() {
-  const it = S.items.find((i) => i.id === S.selId);
   const sh = $('sheet');
+  $('shNav').hidden = !S.selSeg;
+  if (S.selSeg) { sh.hidden = false; refreshSegSheet(); return; }
+  const it = S.items.find((i) => i.id === S.selId);
   if (!it) { sh.hidden = true; return; }
   sh.hidden = false;
+  $('shActions').hidden = false; $('shNoteWrap').hidden = false;
   const isSk = it.kind === 'sketch';
   $('shTitle').textContent = isSk ? 'Линия эскиза' : `${it.kind === 'line' ? 'Размер' : 'Точка'} №${it.no}`;
   $('shSub').textContent = isSk
@@ -687,9 +702,10 @@ function refreshSheet() {
   rb.textContent = S.armedId === it.id ? '◎ Ждёт замер с DISTO…' : '◎ Перемерить';
 }
 function bindSheet() {
-  const cur = () => S.items.find((i) => i.id === S.selId);
+  const cur = () => (S.selSeg ? segItem(S.selSeg, true) : S.items.find((i) => i.id === S.selId));
   let editSnap = false;
   const onEdit = (fn) => (e) => {
+    if (S.selSeg && !editSnap) { pushUndo(); editSnap = true; }
     const it = cur(); if (!it) return;
     if (!editSnap) { pushUndo(); editSnap = true; }
     fn(it, e.target.value);
@@ -702,6 +718,14 @@ function bindSheet() {
   $('shValue').addEventListener('input', onEdit((it, v) => {
     const n = parseNum(v); it.value = v.trim() === '' ? null : n; if (n != null) { it.src = 'manual'; it.mt = Date.now(); }
   }));
+  $('shValue').addEventListener('keydown', (e) => {
+    // Enter в поле стены — записать и перейти к следующей
+    if (e.key === 'Enter' && S.selSeg && S.settings.autoNext && parseNum(e.target.value) != null) { e.preventDefault(); e.target.blur(); gotoSeg(1, true); }
+  });
+  $('shPrev').onclick = () => gotoSeg(-1);
+  $('shClear').onclick = () => { const it = segItem(S.selSeg); if (it) { removeItem(it.id); toast('Замер стены очищен'); } };
+  $('shNext').onclick = () => gotoSeg(1);
+  $('shNextOpen').onclick = () => gotoSeg(1, true);
   $('shDesign').addEventListener('input', onEdit((it, v) => {
     if (v.trim() === '') { it.designManual = false; autoDesign(it); } else { it.design = parseNum(v); it.designManual = true; }
   }));
@@ -711,14 +735,233 @@ function bindSheet() {
   $('shNote').addEventListener('input', onEdit((it, v) => { it.note = v; }));
   for (const id of ['shValue', 'shDesign', 'shFloor', 'shTo', 'shNote'])
     $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
-  $('shClose').onclick = () => select(null);
-  $('shDelete').onclick = () => { const it = cur(); if (it) { removeItem(it.id); toast('Удалено. «Отменить» — вернуть'); } };
+  $('shClose').onclick = () => { S.selSeg = null; select(null); };
+  $('shDelete').onclick = () => {
+    if (S.selSeg) { const it = segItem(S.selSeg); if (it) { removeItem(it.id); refreshSheet(); toast('Замер стены очищен'); } return; }
+    const it = cur(); if (it) { removeItem(it.id); toast('Удалено. «Отменить» — вернуть'); }
+  };
   $('shRemeasure').onclick = () => {
     const it = cur(); if (!it) return;
     S.armedId = S.armedId === it.id ? null : it.id;
     refreshSheet();
     if (S.armedId) hint('Нажмите кнопку на DISTO — значение запишется в №' + it.no);
   };
+}
+
+/* ---------- стены: обмер по отрезкам ---------- */
+function wallsOf(name = S.block) {
+  const b = S.plan.blocks.find((x) => x.name === name);
+  return b ? prepBlock(b).walls : { rooms: [], segs: [], byKey: new Map() };
+}
+function segItem(key, create, block = S.block, floor = S.floor) {
+  let it = S.items.find((i) => i.kind === 'seg' && i.key === key && i.block === block && i.floor === floor);
+  if (!it && create) {
+    const sg = wallsOf(block).byKey.get(key);
+    it = { id: uid(), kind: 'seg', key, block, floor, room: sg?.room, wall: sg?.wall, value: null, design: sg ? sg.len : null, t: Date.now() };
+    S.items.push(it);
+  }
+  return it;
+}
+function segInfo(it) { return wallsOf(it.block).byKey.get(it.key); }
+function segLabel(it) { const sg = segInfo(it); return sg ? `К${sg.room}·${sg.wall}` : `К${it.room ?? '?'}·${it.wall ?? '?'}`; }
+function floorSegMap() {
+  const m = new Map();
+  for (const i of S.items) if (i.kind === 'seg' && i.block === S.block && i.floor === S.floor) m.set(i.key, i);
+  return m;
+}
+function firstOpenSeg() {
+  const m = floorSegMap();
+  const sg = wallsOf().segs.find((s) => m.get(s.key)?.value == null);
+  return sg ? sg.key : null;
+}
+function recordSeg(key, meters, src) {
+  pushUndo();
+  const it = segItem(key, true);
+  it.value = meters; it.src = src; it.mt = Date.now();
+  if (!it.designManual) it.design = segInfo(it)?.len ?? it.design;
+  const sg = segInfo(it);
+  const d = it.design != null ? ` (${fmtSigned(meters - it.design)})` : '';
+  toast(`Комната ${sg?.room} · стена ${sg?.wall}: ${fmt(meters)} м${d}`);
+  feedback();
+  save();
+  if (S.settings.autoNext) gotoSeg(1, true);
+  else { refreshSheet(); draw(); }
+}
+function selectSeg(key, noZoom) {
+  const W = wallsOf();
+  const prev = W.byKey.get(S.selSeg);
+  S.selId = null; S.armedId = null;
+  S.selSeg = key;
+  refreshSheet();
+  const sg = W.byKey.get(key);
+  if (sg) {
+    const room = W.rooms.find((r) => r.no === sg.room);
+    if (!noZoom && room && (!prev || prev.room !== sg.room)) fitRoom(room);
+    ensureVisible(sg);
+  }
+  draw();
+}
+function fitRoom(room) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of room.segs) for (const [x, y] of [[s.ax, s.ay], [s.bx, s.by]]) {
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+  }
+  const v = V();
+  const sheetH = $('sheet').hidden ? 0 : $('sheet').offsetHeight;
+  const Wd = cv.clientWidth, top = 60, H = Math.max(160, cv.clientHeight - sheetH - top - 20);
+  const sc = Math.min((Wd - 90) / (x1 - x0 || 1), (H - 50) / (y1 - y0 || 1));
+  // не мельчить сильнее, чем уже есть, если комната и так крупная
+  const rw = (x1 - x0) * v.s, rh = (y1 - y0) * v.s;
+  if (rw > Wd * 0.45 && rh > H * 0.45 && rw < Wd && rh < H) return;
+  v.s = sc;
+  v.ox = Wd / 2 - ((x0 + x1) / 2) * sc;
+  v.oy = top + H / 2 + ((y0 + y1) / 2) * sc;
+}
+function gotoSeg(dir, onlyOpen, silent) {
+  const segs = wallsOf().segs;
+  if (!segs.length) return;
+  const m = floorSegMap();
+  const N = segs.length;
+  let idx = segs.findIndex((s) => s.key === S.selSeg);
+  const prevRoom = idx >= 0 ? segs[idx].room : null;
+  if (idx < 0) idx = dir > 0 ? -1 : 0;
+  for (let k = 1; k <= N; k++) {
+    const s = segs[(((idx + dir * k) % N) + N) % N];
+    if (onlyOpen && m.get(s.key)?.value != null) continue;
+    if (prevRoom != null && s.room !== prevRoom && !silent) {
+      const done = segs.filter((q) => q.room === prevRoom).every((q) => m.get(q.key)?.value != null);
+      hint(done ? `Комната ${prevRoom} обмерена ✓ Переход в комнату ${s.room}` : `Комната ${s.room}`);
+    }
+    selectSeg(s.key);
+    return;
+  }
+  if (!silent) { toast('Все стены блока ' + S.block + ' на этаже ' + S.floor + ' измерены ✓'); refreshSheet(); draw(); }
+}
+function ensureVisible(sg) {
+  if (!sg) return;
+  const v = V();
+  const a = w2s((sg.ax + sg.bx) / 2, (sg.ay + sg.by) / 2, v);
+  const sheetH = $('sheet').hidden ? 0 : $('sheet').offsetHeight;
+  const W = cv.clientWidth, H = cv.clientHeight - sheetH;
+  if (a.x < 40 || a.x > W - 40 || a.y < 70 || a.y > H - 30) {
+    v.ox += W / 2 - a.x; v.oy += Math.max(120, H / 2) - a.y;
+  }
+}
+function pickSeg(sx, sy) {
+  const v = V();
+  let best = null, bs = Infinity;
+  for (const s of wallsOf().segs) {
+    const a = w2s(s.ax, s.ay, v), b = w2s(s.bx, s.by, v);
+    const d = distSeg(sx, sy, a.x, a.y, b.x, b.y);
+    if (d > 26) continue;
+    const w = screenToWorld(sx, sy, v);
+    const inside = (w.x - (s.ax + s.bx) / 2) * s.nx + (w.y - (s.ay + s.by) / 2) * s.ny > 0;
+    const score = d - (inside ? 8 : 0);
+    if (score < bs) { bs = score; best = s; }
+  }
+  return best;
+}
+function drawWalls(c, b, v, pal, opts = {}) {
+  const W = prepBlock(b).walls;
+  const m = new Map();
+  for (const i of S.items) if (i.kind === 'seg' && i.block === b.name && i.floor === S.floor) m.set(i.key, i);
+  const showMode = S.tool === 'walls' || opts.export;
+  if (!showMode && !m.size) return;
+  const now = performance.now();
+  c.save();
+  c.lineCap = 'round';
+  // номера комнат
+  if (showMode) {
+    for (const r of W.rooms) {
+      const p = w2s(r.cx, r.cy, v);
+      const done = r.segs.every((s) => m.get(s.key)?.value != null);
+      const any = r.segs.some((s) => m.get(s.key)?.value != null);
+      c.beginPath(); c.arc(p.x, p.y, 11, 0, Math.PI * 2);
+      c.fillStyle = done ? pal.ok : any ? pal.warn : (pal.dark ? '#22304a' : '#e3e7ee');
+      c.fill();
+      c.fillStyle = done || any ? '#fff' : pal.ink2;
+      c.font = '800 11px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(String(r.no), p.x, p.y + 0.5);
+    }
+  }
+  const lab = [];
+  for (const s of W.segs) {
+    const it = m.get(s.key);
+    const active = !opts.export && s.key === S.selSeg;
+    const has = it && it.value != null;
+    if (!has && !active && !showMode) continue;
+    const a = w2s(s.ax, s.ay, v), e = w2s(s.bx, s.by, v);
+    const L = Math.hypot(e.x - a.x, e.y - a.y);
+    const nx = s.nx, ny = -s.ny; // нормаль внутрь в экранных координатах
+    const off = 3;
+    const ax = a.x + nx * off, ay = a.y + ny * off, ex = e.x + nx * off, ey = e.y + ny * off;
+    let col = null;
+    if (has) { const cl = devClass(it); col = cl ? pal[cl] : pal.accent; }
+    if (active) {
+      const k = (now % 1200) / 1200;
+      c.strokeStyle = pal.accent2; c.globalAlpha = 0.25 + 0.25 * Math.sin(k * Math.PI * 2);
+      c.lineWidth = 14; c.beginPath(); c.moveTo(ax, ay); c.lineTo(ex, ey); c.stroke();
+      c.globalAlpha = 1; c.lineWidth = 5; c.strokeStyle = pal.accent2;
+      c.beginPath(); c.moveTo(ax, ay); c.lineTo(ex, ey); c.stroke();
+      // засечки на концах — откуда и докуда мерить
+      for (const [px, py] of [[ax, ay], [ex, ey]]) {
+        c.beginPath(); c.moveTo(px + nx * 12, py + ny * 12); c.lineTo(px - nx * 4, py - ny * 4); c.lineWidth = 3; c.stroke();
+      }
+    } else if (has) {
+      c.strokeStyle = col; c.lineWidth = 3.5;
+      c.beginPath(); c.moveTo(ax, ay); c.lineTo(ex, ey); c.stroke();
+    }
+    // подпись
+    let rot = Math.atan2(e.y - a.y, e.x - a.x);
+    if (rot > Math.PI / 2) rot -= Math.PI; if (rot < -Math.PI / 2) rot += Math.PI;
+    const mx = (a.x + e.x) / 2 + nx * 15, my = (a.y + e.y) / 2 + ny * 15;
+    if (active) lab.push(() => {
+      const t = has ? fmt(it.value) : '?';
+      pill(c, mx + nx * 4, my + ny * 4, `${t}  · черт. ${fmt(it?.design ?? s.len)}`, pal.accent2, '#fff', { rot, size: 12 });
+    });
+    else if (has && (L > 34 || opts.export)) lab.push(() => pill(c, mx, my, fmt(it.value), col, '#fff', { rot, size: 11, shadow: false }));
+    else if (!has && showMode && S.settings.wallLabels && !opts.export && L > 46) {
+      c.save(); c.translate(mx, my); c.rotate(rot);
+      c.font = '600 10px system-ui, sans-serif'; c.fillStyle = pal.ink2; c.globalAlpha = 0.8;
+      c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(fmt(s.len), 0, 0); c.restore();
+    }
+  }
+  for (const f of lab) f();
+  c.restore();
+}
+function refreshSegSheet() {
+  const sg = wallsOf().byKey.get(S.selSeg);
+  if (!sg) { S.selSeg = null; $('sheet').hidden = true; return; }
+  const it = segItem(S.selSeg);
+  $('shTitle').textContent = `Комната ${sg.room} · стена ${sg.wall} из ${sg.of}`;
+  $('shSub').textContent = `Блок ${S.block} · этаж ${S.floor} · по чертежу ${fmt(sg.len)} м` +
+    (it?.mt ? ' · ' + new Date(it.mt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + (it.src === 'manual' ? ' · вручную' : ' · DISTO') : '');
+  for (const el of document.querySelectorAll('#sheet .grid2, #shDev')) el.hidden = false;
+  $('shFloorRow').hidden = true;
+  $('shActions').hidden = true;
+  $('shNoteWrap').hidden = !it?.note;
+  $('shClear').hidden = !(it && it.value != null);
+  const set = (el, val) => { if (document.activeElement !== el) el.value = val; };
+  set($('shValue'), it?.value == null ? '' : fmt(it.value));
+  set($('shDesign'), fmt(it?.design ?? sg.len));
+  set($('shNote'), it?.note || '');
+  const dv = $('shDev');
+  const cls = it ? devClass(it) : null;
+  dv.className = 'dev ' + (cls || '');
+  dv.textContent = cls ? `Отклонение ${fmtSigned(it.value - it.design)} м от чертежа` : 'Измерьте DISTO или введите значение';
+  if (!cls) dv.className = 'dev';
+}
+function updateProgress() {
+  const el = $('prog');
+  if (!el) return;
+  const segs = wallsOf().segs;
+  if (!segs.length) { el.hidden = true; return; }
+  const m = floorSegMap();
+  const done = segs.filter((s) => m.get(s.key)?.value != null).length;
+  const rooms = wallsOf().rooms;
+  const rdone = rooms.filter((r) => r.segs.every((s) => m.get(s.key)?.value != null)).length;
+  el.hidden = false;
+  el.innerHTML = `<b>${done}</b>/${segs.length} стен · <b>${rdone}</b>/${rooms.length} комн.<i style="width:${(done / segs.length) * 100}%"></i>`;
 }
 
 /* ---------- верхняя панель ---------- */
@@ -734,7 +977,7 @@ function renderBlocks() {
   }
 }
 function setBlock(name) {
-  S.block = name; S.draft = null; select(null);
+  S.block = name; S.draft = null; S.selSeg = null; select(null);
   renderBlocks(); updateDraftBar(); save(); draw();
 }
 function setFloor(f, keepTo) {
@@ -742,7 +985,7 @@ function setFloor(f, keepTo) {
   if (!keepTo) S.toFloor = S.dir === 'down' ? f - 1 : f + 1;
   $('floorNum').textContent = S.floor;
   $('toFloorNum').textContent = S.toFloor ?? '—';
-  select(null); save(); draw();
+  const keepSeg = S.selSeg; select(null); S.selSeg = keepSeg; refreshSheet(); save(); draw();
 }
 function setDir(d) {
   S.dir = d;
@@ -752,9 +995,11 @@ function setDir(d) {
   save();
 }
 function setTool(t) {
-  S.tool = t; S.draft = null; updateDraftBar(); if (t !== "select") select(null);
+  S.tool = t; S.draft = null; updateDraftBar(); if (t !== 'select') { S.selSeg = null; select(null); }
   for (const b of $('tools').querySelectorAll('[data-tool]')) b.classList.toggle('on', b.dataset.tool === t);
+  if (t === 'walls' && !S.selSeg) gotoSeg(1, true, true);
   hint({
+    walls: 'Нажмите на стену или меряйте по порядку: замер DISTO запишется в синюю стену',
     select: '',
     point: 'Нажмите на план, где стоите с DISTO — появится точка замера',
     line: 'Укажите первую точку размера (привязка к углам)',
@@ -782,8 +1027,11 @@ function listItems() {
   return S.items
     .filter((i) => i.kind !== 'sketch')
     .filter((i) => listScope === 'all' || (i.block === S.block && (listScope === 'block' || i.floor === S.floor)))
-    .sort((a, b) => a.block.localeCompare(b.block, 'ru') || b.floor - a.floor || a.no - b.no);
+    .sort((a, b) => a.block.localeCompare(b.block, 'ru') || b.floor - a.floor || (a.kind === 'seg') - (b.kind === 'seg') || sortNo(a) - sortNo(b));
 }
+function sortNo(i) { if (i.kind !== 'seg') return i.no || 0; const sg = segInfo(i); return sg ? sg.room * 1000 + sg.wall : 1e9; }
+function itemNo(i) { return i.kind === 'seg' ? segLabel(i) : String(i.no); }
+function itemType(i) { return i.kind === 'seg' ? 'стена' : i.kind === 'line' ? 'размер' : `${i.dir === 'up' ? '↑' : '↓'} до ${i.toFloor ?? '—'}`; }
 function renderList() {
   const rows = listItems();
   const t = $('listTable');
@@ -791,8 +1039,8 @@ function renderList() {
   t.innerHTML = head + (rows.length ? rows.map((i) => {
     const d = i.value != null && i.design != null ? i.value - i.design : null;
     const cls = devClass(i);
-    const type = i.kind === 'line' ? 'размер' : `${i.dir === 'up' ? '↑' : '↓'} до ${i.toFloor ?? '—'}`;
-    return `<tr class="clk" data-id="${i.id}"><td>${esc(i.block)}</td><td>${i.floor}</td><td>${i.no}</td><td>${type}</td>` +
+    const type = itemType(i);
+    return `<tr class="clk" data-id="${i.id}"><td>${esc(i.block)}</td><td>${i.floor}</td><td>${itemNo(i)}</td><td>${type}</td>` +
       `<td class="num">${i.value == null ? '<span class="pend">ожидает</span>' : fmt(i.value)}</td><td class="num">${fmt(i.design)}</td>` +
       `<td class="num" style="color:var(--${cls || 'ink2'})">${d == null ? '—' : fmtSigned(d)}</td><td>${esc(i.note || '')}</td></tr>`;
   }).join('') : '<tr><td colspan="8" class="muted">Замеров пока нет</td></tr>');
@@ -801,6 +1049,7 @@ function renderList() {
     $('listModal').hidden = true;
     if (it.block !== S.block) setBlock(it.block);
     if (it.floor !== S.floor) setFloor(it.floor, true);
+    if (it.kind === 'seg') { if (S.tool !== 'walls') setTool('walls'); selectSeg(it.key); return; }
     centerOn(it); select(it.id);
   };
   const done = rows.filter((i) => i.value != null);
@@ -836,8 +1085,9 @@ function exportCsv() {
   const lines = [head.map(q).join(';')];
   for (const i of rows) {
     const d = i.value != null && i.design != null ? i.value - i.design : null;
-    lines.push([i.block, i.floor, i.no, i.kind === 'line' ? 'размер' : 'точка', i.kind === 'line' ? '' : i.dir === 'up' ? 'вверх' : 'вниз',
-      i.kind === 'line' ? '' : i.toFloor ?? '', i.value == null ? '' : fmt(i.value), i.design == null ? '' : fmt(i.design),
+    const pt = i.kind === 'point';
+    lines.push([i.block, i.floor, itemNo(i), i.kind === 'seg' ? 'стена' : i.kind === 'line' ? 'размер' : 'точка', pt ? (i.dir === 'up' ? 'вверх' : 'вниз') : '',
+      pt ? i.toFloor ?? '' : '', i.value == null ? '' : fmt(i.value), i.design == null ? '' : fmt(i.design),
       d == null ? '' : fmt(d), i.src === 'manual' ? 'вручную' : i.src ? 'DISTO' : '', i.mt ? new Date(i.mt).toLocaleString('ru-RU') : '', i.note || ''].map(q).join(';'));
   }
   download(`Замеры_${stamp()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv');
@@ -853,9 +1103,21 @@ function exportDxf(allFloors) {
   for (const t of b.texts || []) w.text(L_PLAN, X(t.x), X(t.y), X(t.h), t.t);
   const items = S.items.filter((i) => i.block === S.block && (allFloors || i.floor === S.floor));
   const R = 150, H = 250; // мм
+  const LR = w.layer('КОМНАТЫ', 8);
+  for (const r of prepBlock(b).walls.rooms) w.text(LR, X(r.cx), X(r.cy), 200, 'К' + r.no, 0, 'center');
   for (const i of items) {
     const sfx = allFloors ? '_ЭТ' + i.floor : '';
-    if (i.kind === 'sketch') {
+    if (i.kind === 'seg') {
+      const sg = segInfo(i);
+      if (!sg || i.value == null) continue;
+      const x1 = X(sg.ax), y1 = X(sg.ay), x2 = X(sg.bx), y2 = X(sg.by);
+      let ang = Math.atan2(y2 - y1, x2 - x1);
+      if (ang > Math.PI / 2) ang -= Math.PI; if (ang < -Math.PI / 2) ang += Math.PI;
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      w.text(w.layer('ОБМЕРЫ' + sfx, 3), mx + sg.nx * 220, my + sg.ny * 220, 150, fmt(i.value), ang * 180 / Math.PI, 'center');
+      if (i.design != null && Math.abs(i.value - i.design) >= 0.005)
+        w.text(w.layer('ОБМЕРЫ_ОТКЛ' + sfx, 1), mx + sg.nx * 420, my + sg.ny * 420, 100, `${fmtSigned(i.value - i.design).replace('−', '-')} (черт. ${fmt(i.design)})`, ang * 180 / Math.PI, 'center');
+    } else if (i.kind === 'sketch') {
       w.poly(w.layer('ЭСКИЗ' + sfx, 30), i.pts.map(X), !!i.closed);
     } else if (i.kind === 'line') {
       const ly = w.layer('РАЗМЕРЫ' + sfx, 4);
@@ -889,8 +1151,9 @@ function exportPng() {
   x.fillStyle = '#fff'; x.font = '800 56px system-ui, sans-serif'; x.textBaseline = 'middle';
   x.fillText(`Блок ${S.block} · этаж ${S.floor}`, 50, 62);
   x.font = '500 30px system-ui, sans-serif'; x.fillStyle = '#cfd8ea';
-  const its = curItems().filter((i) => i.kind !== 'sketch');
-  x.fillText(`Замеров: ${its.length}, измерено: ${its.filter((i) => i.value != null).length} · ${new Date().toLocaleString('ru-RU')} · значения в метрах`, 50, 116);
+  const segsN = prepBlock(b).walls.segs.length;
+  const segDone = curItems().filter((i) => i.kind === 'seg' && i.value != null).length;
+  x.fillText(`Обмерный план · стен измерено: ${segDone} из ${segsN} · ${new Date().toLocaleString('ru-RU')} · значения в метрах`, 50, 116);
   x.fillStyle = '#ff5a1f'; x.fillRect(0, head - 6, W, 6);
   x.save(); x.translate(0, head);
   const v = fitView(b, W, Hh, 120);
@@ -899,7 +1162,8 @@ function exportPng() {
   x.scale(sc, sc);
   const v2 = { s: v.s / sc, ox: v.ox / sc, oy: v.oy / sc };
   drawPlan(x, b, v2, pal, { noGrid: true, dpr: sc });
-  drawItems(x, v2, pal, curItems(), { export: true });
+  drawWalls(x, b, v2, pal, { export: true });
+  drawItems(x, v2, pal, curItems().filter((i) => i.kind !== 'seg'), { export: true });
   x.restore();
   c.toBlob((blob) => download(`Блок_${S.block}_этаж_${S.floor}_${stamp()}.png`, blob, 'image/png'), 'image/png');
 }
@@ -995,7 +1259,7 @@ function bindEntry() {
     const a = document.activeElement;
     if (a && (a.tagName === 'INPUT' || a.tagName === 'SELECT' || a.tagName === 'TEXTAREA')) return;
     if (/^[0-9.,]$/.test(e.key)) { inp.focus(); }
-    else if (e.key === 'Escape') { S.draft = null; updateDraftBar(); select(null); }
+    else if (e.key === 'Escape') { S.draft = null; updateDraftBar(); S.selSeg = null; select(null); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && S.selId) { removeItem(S.selId); }
     else if (e.key === 'z' && (e.ctrlKey || e.metaKey)) doUndo();
   });
@@ -1032,10 +1296,13 @@ function bindMenu() {
   };
   $('setTheme').value = S.settings.theme;
   $('setTheme').onchange = (e) => { S.settings.theme = e.target.value; applyTheme(); save(); };
-  for (const [id, key] of [['setOtherFloors', 'otherFloors'], ['setSnap', 'snap'], ['setBeep', 'beep']]) {
+  for (const [id, key] of [['setOtherFloors', 'otherFloors'], ['setSnap', 'snap'], ['setBeep', 'beep'], ['setAutoNext', 'autoNext'], ['setWallLabels', 'wallLabels'], ['setWallCols', 'wallColumns']]) {
     $(id).checked = !!S.settings[key];
-    $(id).onchange = (e) => { S.settings[key] = e.target.checked; save(); draw(); };
+    $(id).onchange = (e) => { S.settings[key] = e.target.checked; if (key === 'wallColumns') resetPrep(); save(); draw(); };
   }
+  const wm = $('setWallMin');
+  wm.value = fmt(S.settings.wallMin);
+  wm.onchange = () => { const n = parseNum(wm.value); S.settings.wallMin = n >= 0 ? n : 0.15; wm.value = fmt(S.settings.wallMin); resetPrep(); save(); draw(); };
   $('btnBackup').onclick = () => download(`Копия_замеров_${stamp()}.json`,
     JSON.stringify({ app: 'disto-plan', v: VERSION, items: S.items, settings: S.settings, plan: stripPrep(S.plan) }), 'application/json');
   $('fileBackup').onchange = async (e) => {
@@ -1068,6 +1335,7 @@ function bindMenu() {
   };
   $('ver').textContent = VERSION;
 }
+function resetPrep() { for (const b of S.plan.blocks) delete b._prep; S.selSeg = null; refreshSheet(); }
 function applyTheme() {
   document.documentElement.dataset.theme = S.settings.theme;
   document.querySelector('meta[name=theme-color]').content = S.settings.theme === 'dark' ? '#08101f' : '#14213d';
@@ -1099,6 +1367,7 @@ async function init() {
   $('draftUndo').onclick = () => { if (S.draft) { S.draft.pts.splice(-2); draw(); } };
   $('draftCancel').onclick = () => { S.draft = null; updateDraftBar(); hint(''); draw(); };
   bindSheet(); bindEntry(); bindMenu(); bindDisto();
+  for (const b of $('tools').querySelectorAll('[data-tool]')) b.classList.toggle('on', b.dataset.tool === S.tool);
   new ResizeObserver(resize).observe(cv);
   resize();
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});

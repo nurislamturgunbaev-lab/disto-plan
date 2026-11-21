@@ -149,7 +149,7 @@ button { cursor: pointer; border: 0; background: none; }
 }
 .field.big input { font-size: 26px; font-weight: 800; height: 56px; font-variant-numeric: tabular-nums; }
 .field input:focus, .field select:focus { outline: 2px solid var(--accent2); border-color: transparent; }
-.dev { font-size: 14px; font-weight: 700; min-height: 0; }
+.dev { font-size: 13px; font-weight: 700; min-height: 0; color: var(--ink2); }
 .dev:empty { display: none; }
 .dev.ok { color: var(--ok); } .dev.warn { color: var(--warn); } .dev.bad { color: var(--bad); }
 .row { display: flex; gap: 8px; }
@@ -197,7 +197,7 @@ tr.clk:active { background: var(--bg); }
 .bn input { height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); padding: 0 10px; width: 90px; color: var(--ink); }
 
 .toast {
-  position: fixed; left: 50%; top: calc(110px + var(--safeT)); transform: translateX(-50%); z-index: 60;
+  position: fixed; left: 50%; top: calc(175px + var(--safeT)); transform: translateX(-50%); z-index: 60;
   background: var(--top); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; font-weight: 600;
   box-shadow: var(--shadow); max-width: 90vw; text-align: center;
 }
@@ -211,3 +211,16 @@ tr.clk:active { background: var(--bg); }
   .subbar { gap: 6px; padding: 6px 8px; }
   .chip { padding: 0 9px; }
 }
+
+.prog {
+  position: absolute; top: 10px; left: 10px; z-index: 2; pointer-events: none;
+  background: var(--card); border-radius: 12px; padding: 7px 12px 9px; box-shadow: var(--shadow);
+  font-size: 12px; color: var(--ink2); overflow: hidden;
+}
+.prog b { color: var(--ink); font-size: 14px; }
+.prog i { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--ok); }
+#shNav .btn { flex: 0 0 auto; padding: 0 16px; font-size: 16px; }
+#shNav .btn.primary { flex: 1; }
+.tools button { font-size: 10px; }
+
+.panel .row.wrap .btn { flex: 1 1 calc(50% - 8px); }
