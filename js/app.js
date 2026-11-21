@@ -1735,7 +1735,7 @@ function bindMenu() {
   $('filePlan').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) loadPlanFile(f); };
   $('btnDefaultPlan').onclick = async () => {
     if (!(await ask('Вернуть встроенный план (блоки А, Б, В, Г)? Замеры сохранятся.', 'Вернуть'))) return;
-    setPlan(structuredClone(DEFAULT_PLAN)); await DB.set('plan', null); $('menuModal').hidden = true;
+    setPlan(JSON.parse(JSON.stringify(DEFAULT_PLAN))); await DB.set('plan', null); $('menuModal').hidden = true;
   };
   const fh = $('setFloorH');
   fh.value = S.settings.floorH ? fmt(S.settings.floorH) : '';
@@ -1800,7 +1800,7 @@ async function init() {
   if (Array.isArray(items)) S.items = items;
   if (settings) Object.assign(S.settings, settings);
   if (session) Object.assign(S, { block: session.block, floor: session.floor ?? 16, dir: session.dir || 'down', toFloor: session.toFloor ?? 15 });
-  S.plan = plan?.blocks?.length ? plan : structuredClone(DEFAULT_PLAN);
+  S.plan = plan?.blocks?.length ? plan : JSON.parse(JSON.stringify(DEFAULT_PLAN));
   if (!S.plan.blocks.find((b) => b.name === S.block)) S.block = S.plan.blocks[0].name;
 
   applyTheme();
