@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.1.3';
+const VERSION = '2.1.4';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -76,7 +76,7 @@ const S = {
   draft: null, // {kind:'line'|'sketch', pts:[]}
   settings: { floorH: 0, theme: 'light', otherFloors: false, snap: true, beep: true, autoNext: true, wallMin: 0.15, wallColumns: false, wallLabels: true, ortho: false, snapModes: { end: true, mid: true, perp: true, near: false },
     polar: false, rotate: false, laserRef: 'back', laserOffset: 0.13, wallTh: 0, btnPos: {},
-    layers: { drawing: true, shadow: true, dims: true, areas: true, openings: true, thick: true, hatch: false, text: false, redoBtn: false, roomOps: false } },
+    layers: { drawing: true, shadow: true, dims: true, areas: true, openings: true, thick: true, hatch: false, text: false, redoBtn: false, roomOps: false, mini: true } },
   views: {},
   undo: [],
   lastMeasure: null,
@@ -575,6 +575,7 @@ function draw() {
   drawTexts(ctx, S.block, S.floor, v, pal);
   drawRuler(ctx, v, pal);
   if (S.turnArm) drawTurnTip(ctx, v, pal);
+  drawMini(pal);
   // черновик
   if (S.draft) {
     const d = S.draft;
@@ -2113,6 +2114,7 @@ const LAYERS = [
   ['thick', 'Толщина стен', 'наружный контур стен (толщина — в меню)'],
   ['hatch', 'Штриховка стен', 'заливка толщины стен'],
   ['text', 'Текст и выноски', 'добавляет инструмент «Текст»'],
+  ['mini', 'Мини-карта слева', 'уменьшенный план без поворота'],
   ['redoBtn', 'Кнопка «Повторить»', 'рядом с «Отменить»'],
   ['roomOps', 'Копировать / повернуть / зеркало', 'кнопки у выбранной комнаты'],
 ];
@@ -2489,6 +2491,45 @@ function currentHead() {
   return null;
 }
 /** Поворот «змейкой»: текущая линия смотрит вверх, её конец стоит в центре экрана, план движется вокруг; кнопки не крутятся */
+/** Мини-карта: начерченные линии этажа, север вверх, без поворота; синяя — текущая линия, рамка — что видно на экране */
+let miniMap = null;
+function drawMini(pal) {
+  const mc = $('mini');
+  const sks = curItems().filter((i) => i.kind === 'sketch' && i.pts?.length >= 4);
+  const show = !!S.settings.layers.mini && sks.length > 0;
+  mc.hidden = !show; miniMap = null;
+  if (!show) return;
+  const W = 112, H = 112, dpr = DPR;
+  if (mc.width !== W * dpr) { mc.width = W * dpr; mc.height = H * dpr; }
+  const c = mc.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const it of sks) for (let i = 0; i < it.pts.length; i += 2) { x0 = Math.min(x0, it.pts[i]); x1 = Math.max(x1, it.pts[i]); y0 = Math.min(y0, it.pts[i + 1]); y1 = Math.max(y1, it.pts[i + 1]); }
+  const pad = 10, k = Math.min((W - pad * 2) / Math.max(x1 - x0, 1e-6), (H - pad * 2) / Math.max(y1 - y0, 1e-6));
+  const ox = (W - (x1 - x0) * k) / 2, oy = (H - (y1 - y0) * k) / 2;
+  const m = (x, y) => ({ x: ox + (x - x0) * k, y: H - oy - (y - y0) * k });
+  miniMap = { m, k, x0, y0, ox, oy, H };
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  for (const it of sks) {
+    c.strokeStyle = GREEN; c.lineWidth = 1.6; c.beginPath();
+    for (let i = 0; i < it.pts.length; i += 2) { const q = m(it.pts[i], it.pts[i + 1]); i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y); }
+    if (it.closed) c.closePath();
+    c.stroke();
+  }
+  const ln = currentLine();
+  if (ln) {
+    const a = m(ln.a.x, ln.a.y), b = m(ln.b.x, ln.b.y);
+    c.strokeStyle = '#1f6feb'; c.lineWidth = 3; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+    c.fillStyle = '#1f6feb'; c.beginPath(); c.arc(b.x, b.y, 3.5, 0, Math.PI * 2); c.fill();
+  }
+  // что видно на экране
+  const cw = cv.clientWidth, ch = cv.clientHeight;
+  const cs = [[0, 0], [cw, 0], [cw, ch], [0, ch]].map(([sx, sy]) => { const w = screenToWorld(sx, sy); return m(w.x, w.y); });
+  c.strokeStyle = 'rgba(100,116,139,.8)'; c.lineWidth = 1; c.setLineDash([3, 2]);
+  c.beginPath(); cs.forEach((q, i) => (i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y))); c.closePath(); c.stroke(); c.setLineDash([]);
+  // север
+  c.fillStyle = '#e03131'; c.font = '800 9px system-ui'; c.textAlign = 'center'; c.fillText('N', W - 9, 11);
+}
 /** Текущая линия (мир): та, что меряем, или последняя начерченная */
 function currentLine() {
   if (S.tool === 'sketch') {
@@ -3515,6 +3556,12 @@ function bindEntry() {
   inp.addEventListener('focus', () => { inp.blur(); });
   for (const b of $('keypad').querySelectorAll('[data-k]')) b.onclick = () => kpKey(b.dataset.k);
   $('kpOk').onclick = kpOk;
+  $('mini').addEventListener('pointerdown', (e) => {
+    e.stopPropagation(); if (!miniMap) return;
+    const r = $('mini').getBoundingClientRect(), mm = miniMap;
+    const wx = mm.x0 + (e.clientX - r.left - mm.ox) / mm.k, wy = mm.y0 + (mm.H - mm.oy - (e.clientY - r.top)) / mm.k;
+    const v = V(); placeWorldAt(v, wx, wy, cv.clientWidth / 2, cv.clientHeight / 2); draw();
+  });
   $('kpLeft').onclick = () => turnLast(1);
   $('kpRight').onclick = () => turnLast(-1);
   $('btnTurn').onclick = () => {
