@@ -5,7 +5,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne } from './zip.js';
 
-const VERSION = '1.5.1';
+const VERSION = '1.6.0';
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
 
@@ -1680,6 +1680,7 @@ function bindTools() {
   $('btnList').onclick = () => { pop.hidden = true; renderList(); $('listModal').hidden = false; };
   $('btnAreas').onclick = () => { pop.hidden = true; renderAreas(); $('areasModal').hidden = false; };
   $('btnShare').onclick = () => { pop.hidden = true; openShare(); };
+  $('btnReport').onclick = () => { pop.hidden = true; shareKind('full', 'share'); };
   $('btnDocs').onclick = () => { pop.hidden = true; renderDocs(); $('docsModal').hidden = false; };
   for (const b of $('snaps').children) b.onclick = () => {
     const k = b.dataset.snap;
@@ -2199,6 +2200,38 @@ function buildPdf(allFloors) {
   for (const f of floors) pages.push(...pdfPagesForFloor(f));
   return canvasesToPdf(pages, 0.88);
 }
+/** Полный отчёт: сводка + все блоки и все этажи, где есть замеры */
+function buildFullReport() {
+  const keepB = S.block, keepF = S.floor;
+  const pairs = [];
+  for (const b of S.plan.blocks) for (const f of floorsWithData(b.name)) pairs.push([b.name, f]);
+  if (!pairs.length) pairs.push([S.block, S.floor]);
+  const pal = PAL_PRINT();
+  const rows = [];
+  const tot = { segs: 0, done: 0, rooms: 0, rdone: 0, sD: 0, sM: 0 };
+  try {
+    for (const [bn, f] of pairs) {
+      S.block = bn; S.floor = f;
+      const rr = roomRows(f);
+      const segs = rr.reduce((t, r) => t + r.room.segs.length, 0);
+      const done = rr.reduce((t, r) => t + r.room.segs.filter((q) => isDone(r.m.get(q.key))).length, 0);
+      const rdone = rr.filter((r) => r.room.segs.every((q) => isDone(r.m.get(q.key)))).length;
+      const sD = rr.reduce((t, r) => t + (r.room.closed ? r.room.area : 0), 0);
+      const sM = rr.reduce((t, r) => t + (r.ab?.area || 0), 0);
+      const gaps = rr.filter((r) => r.ab?.gap != null).map((r) => r.ab.gap);
+      const mg = gaps.length ? Math.max(...gaps) : null;
+      rows.push([{ t: bn, b: true }, String(f), `${done}/${segs}`, `${rdone}/${rr.length}`, fmt(sD), sM ? { t: fmt(sM), b: true } : '—',
+        mg == null ? '—' : { t: fmt(mg), c: pal[gapClass(mg)] }]);
+      Object.assign(tot, { segs: tot.segs + segs, done: tot.done + done, rooms: tot.rooms + rr.length, rdone: tot.rdone + rdone, sD: tot.sD + sD, sM: tot.sM + sM });
+    }
+    rows.push([{ t: 'Итого', b: true }, '', { t: `${tot.done}/${tot.segs}`, b: true }, { t: `${tot.rdone}/${tot.rooms}`, b: true }, { t: fmt(tot.sD), b: true }, { t: tot.sM ? fmt(tot.sM) : '—', b: true }, '']);
+    const pages = tablePages('Полный отчёт по обмеру', `${S.settings.objName ? S.settings.objName + ' · ' : ''}${S.plan.name} · сформирован ${new Date().toLocaleString('ru-RU')}`,
+      [{ h: 'Блок', w: 0.1 }, { h: 'Этаж', w: 0.1, a: 'r' }, { h: 'Стен изм.', w: 0.15, a: 'r' }, { h: 'Комнат', w: 0.13, a: 'r' }, { h: 'S черт., м²', w: 0.17, a: 'r' }, { h: 'S обмер, м²', w: 0.17, a: 'r' }, { h: 'Невязка, м', w: 0.18, a: 'r' }],
+      rows, 'Далее по каждому блоку и этажу: поэтажный план, площади комнат, ведомость стен.');
+    for (const [bn, f] of pairs) { S.block = bn; S.floor = f; pages.push(...pdfPagesForFloor(f)); }
+    return canvasesToPdf(pages, 0.85);
+  } finally { S.block = keepB; S.floor = keepF; }
+}
 function canvasBlob(c, type = 'image/png') { return new Promise((r) => c.toBlob(r, type)); }
 
 /* ---------- архив документов ---------- */
@@ -2238,6 +2271,7 @@ async function shareKind(kind, mode) {
   let name, blob;
   try {
     if (kind === 'pdf') { blob = buildPdf(false); name = fileBase('этаж_' + S.floor) + '.pdf'; }
+    else if (kind === 'full') { blob = buildFullReport(); name = `Полный_отчёт_${stamp()}.pdf`; }
     else if (kind === 'pdfall') { blob = buildPdf(true); name = fileBase('все_этажи') + '.pdf'; }
     else if (kind === 'dxf') { blob = buildDxf(false); name = fileBase('этаж_' + S.floor) + '.dxf'; }
     else if (kind === 'dxfall') { blob = buildDxf(true); name = fileBase('все_этажи') + '.dxf'; }
@@ -2515,6 +2549,13 @@ async function init() {
   new ResizeObserver(resize).observe(cv);
   resize();
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  // подсказка: на весь экран — только с иконки «На экран Домой»
+  const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+  let tipSeen = false; try { tipSeen = localStorage.getItem('tipHome') === '1'; } catch (e) { /* */ }
+  if (!standalone && /iPhone|iPad|Android/i.test(navigator.userAgent) && !tipSeen) {
+    $('homeTip').hidden = false;
+    $('homeTipClose').onclick = () => { $('homeTip').hidden = true; try { localStorage.setItem('tipHome', '1'); } catch (e) { /* */ } };
+  }
   window.__app = { S, onMeasure, draw }; // для отладки
 }
 init();

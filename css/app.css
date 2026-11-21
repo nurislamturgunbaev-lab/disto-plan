@@ -329,3 +329,10 @@ tr.clk:active { background: var(--bg); }
 .mbar:not([hidden]) + .entry { padding-top: 5px; }
 .mbar:not([hidden]) + .entry input, .mbar:not([hidden]) + .entry button { height: 38px; }
 .mbar:not([hidden]) + .entry .undo { display: none; }
+
+.shareItem.main { background: var(--accent); color: #fff; border-color: transparent; }
+.shareItem.main span { color: rgba(255,255,255,.85); }
+.homeTip { position: fixed; left: 8px; right: 8px; bottom: calc(96px + var(--safeB)); z-index: 66; display: flex; gap: 10px; align-items: center;
+  background: var(--top); color: #fff; padding: 10px 12px; border-radius: 14px; font-size: 13px; box-shadow: var(--shadow); }
+.homeTip span { flex: 1; }
+.homeTip button { color: #fff; font-size: 16px; width: 28px; height: 28px; }
