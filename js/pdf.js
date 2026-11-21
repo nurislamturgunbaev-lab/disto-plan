@@ -21,7 +21,9 @@ export function canvasesToPdf(pages, quality = 0.9) {
   obj(1, () => push('<< /Type /Catalog /Pages 2 0 R >>'));
   obj(2, () => push(`<< /Type /Pages /Kids [${kids}] /Count ${n} >>`));
   pages.forEach((pg, i) => {
-    const W = pg.landscape ? 841.89 : 595.28, H = pg.landscape ? 595.28 : 841.89;
+    const big = pg.size === 'A3';
+    const a = big ? 841.89 : 595.28, b = big ? 1190.55 : 841.89; // A4 / A3, пункты
+    const W = pg.landscape ? b : a, H = pg.landscape ? a : b;
     const pid = 3 + i * 3, cid = pid + 1, iid = pid + 2;
     const jpg = b64ToBytes(pg.canvas.toDataURL('image/jpeg', quality).split(',')[1]);
     // вписываем картинку в страницу с сохранением пропорций

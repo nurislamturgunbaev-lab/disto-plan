@@ -24,6 +24,7 @@
   </header>
 
   <div class="toolsPop" id="toolsPop" hidden>
+    <button class="popX" id="toolsX" aria-label="Закрыть">✕</button>
     <div class="tools" id="tools">    
       <button data-tool="walls" class="on"><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 5h18" stroke="currentColor" stroke-width="4"/><path d="M8 11h8M8 11l2-2M8 11l2 2M16 11l-2-2M16 11l-2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Стены</span></button>
       <button data-tool="select"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Выбор</span></button>
@@ -32,10 +33,13 @@
       <button data-tool="sketch"><svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Чертить</span></button>
       <button id="btnList"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Журнал</span></button>
       <button data-tool="open"><svg viewBox="0 0 24 24"><path d="M3 20h4M17 20h4M7 20V9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 9a11 11 0 0110 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2 2"/><path d="M3 4h18M3 7h18" stroke="currentColor" stroke-width="1.6"/></svg><span>Двери/окна</span></button>
+      <button id="btnLayers"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Слои</span></button>
+      <button data-tool="ruler"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2" stroke="currentColor" stroke-width="2"/></svg><span>Рулетка</span></button>
+      <button data-tool="text" id="toolText" hidden><svg viewBox="0 0 24 24"><path d="M5 5h14M12 5v14M3 21l6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Текст</span></button>
       <button id="btnAreas"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 15l3-6 3 4 2-2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Площади</span></button>
       <button id="btnDocs"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 2v6h6M9 13h8M9 17h8" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Документы</span></button>
       <button id="btnClearFloor"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Очистить этаж</span></button>
-      <button id="btnReport"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4M14 2v6h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Отчёт</span></button>
+      <button id="btnReport"><svg viewBox="0 0 24 24"><path d="M21 3L3 10.5l6.5 2.2L12 20l3-6 6-11z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.5 12.7L21 3" stroke="currentColor" stroke-width="2"/></svg><span>Telegram</span></button>
       <button id="btnShare"><svg viewBox="0 0 24 24"><path d="M21 3L3 10l7 3 3 7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 13l11-10" stroke="currentColor" stroke-width="2"/></svg><span>Отправить</span></button>
     </div>
     <div class="snapHead">Привязки <small>(как в AutoCAD)</small></div>
@@ -86,11 +90,31 @@
       <button data-d="r" class="dr" aria-label="Вправо">▶</button>
       <button data-d="d" class="dd" aria-label="Вниз">▼</button>
     </div>
-    <button class="flt focusT" id="btnFocus" aria-label="Полный экран" title="Полный экран"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5M9 9h6v6H9z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <!-- слева: лазер спереди/сзади и направления (под левую руку) -->
+    <div class="dirPad" id="dirPad" data-fl="dirPad" hidden>
+      <button class="laserBtn" id="laserBtn" title="Лазер: спереди / сзади"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="8" width="14" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M17 12h5" stroke="currentColor" stroke-width="2" stroke-dasharray="2 2"/></svg><small id="laserTxt">СЗАДИ</small></button>
+      <div class="dRow">
+        <button data-r="l" title="Налево" aria-label="Налево"><svg viewBox="0 0 24 24"><path d="M18 20v-7a3 3 0 00-3-3H6m4-4l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button data-r="r" title="Направо" aria-label="Направо"><svg viewBox="0 0 24 24"><path d="M6 20v-7a3 3 0 013-3h9m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+      <div class="dRow">
+        <button data-r="s" title="Прямо" aria-label="Прямо"><svg viewBox="0 0 24 24"><path d="M12 20V5m-5 5l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="dirUndo" title="Вернуть" aria-label="Вернуть"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+    </div>
+    <!-- справа в полноэкранном режиме: дверь и окно -->
+    <div class="openPad" id="openPad" data-fl="openPad" hidden>
+      <button data-ot="door" title="Дверь" aria-label="Дверь"><svg viewBox="0 0 24 24"><path d="M3 20h4M17 20h4M7 20V8" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M7 8a12 12 0 0110 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2 2"/></svg></button>
+      <button data-ot="window" title="Окно" aria-label="Окно"><svg viewBox="0 0 24 24"><path d="M3 8h18M3 12h18M3 16h18M3 8v8M21 8v8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+    </div>
+    <div class="compass" id="compass" title="Север плана — нажмите, чтобы вернуть" hidden><svg viewBox="0 0 40 40" width="40" height="40"><circle cx="20" cy="20" r="18" fill="var(--card)" stroke="var(--line)"/><g id="compassNeedle"><path d="M20 5l5 15h-10z" fill="#e03131"/><path d="M20 35l5-15h-10z" fill="#94a3b8"/><text x="20" y="13" text-anchor="middle" font-size="7" font-weight="800" fill="#fff">N</text></g></svg></div>
+    <button class="flt polarT" id="btnPolar" data-fl="btnPolar" aria-label="Полярные углы 5°" title="Полярные углы 5°"><b>∠5°</b><small>УГОЛ</small></button>
+    <button class="flt rotT" id="btnRot" data-fl="btnRot" aria-label="Крутить план" title="Крутить план по линии"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M20 12a8 8 0 11-3-6.2M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><small>ПОВОР</small></button>
+    <button class="flt focusT" id="btnFocus" data-fl="btnFocus" aria-label="Полный экран" title="Полный экран"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5M9 9h6v6H9z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="focusExit" id="btnFocusExit" aria-label="Выйти из полного экрана" title="Выйти"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-    <button class="flt snapT" id="btnSnap" aria-label="Привязка">⌖<small>ПРИВ</small></button>
-    <button class="flt orthoT" id="btnOrtho" aria-label="Орто">⊾<small>ОРТО</small></button>
-    <button class="fit" id="btnFit" aria-label="Показать весь блок">
+    <button class="flt snapT" id="btnSnap" data-fl="btnSnap" aria-label="Привязка">⌖<small>ПРИВ</small></button>
+    <button class="flt orthoT" id="btnOrtho" data-fl="btnOrtho" aria-label="Орто">⊾<small>ОРТО</small></button>
+    <button class="fit" id="btnFit" data-fl="btnFit" aria-label="Показать весь блок">
       <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
     <button class="measure" id="btnTrigger" hidden aria-label="Измерить">
@@ -118,7 +142,8 @@
     <div class="grid2o" id="shOpen" hidden>
       <label class="field"><span>Тип</span><select id="shOType"><option value="door">Дверь</option><option value="window">Окно</option></select></label>
       <label class="field"><span>Ширина, м</span><input id="shOW" inputmode="decimal" autocomplete="off"></label>
-      <button class="btn" id="shOFlip" style="grid-column:1/-1">⟲ Сторона открывания двери</button>
+      <button class="btn" id="shOFlip">⟲ Сторона открывания</button>
+      <button class="btn" id="shOAuto">↔ По стандарту</button>
     </div>
     <div class="grid2" id="shSlope" hidden>
       <label class="field"><span>Уклон стены, °</span><input id="shAng" inputmode="decimal" autocomplete="off" placeholder="0"></label>
@@ -142,6 +167,11 @@
       <button class="btn" id="shMerge">⌁ Удалить поворот</button>
       <button class="btn" id="shMore">⋯ Подробнее</button>
     </div>
+    <div class="row" id="shRoomOps" hidden>
+      <button class="btn" id="shRCopy">⧉ Копировать</button>
+      <button class="btn" id="shRRot">⟳ 90°</button>
+      <button class="btn" id="shRMir">⇋ Зеркало</button>
+    </div>
     <div class="row" id="shActions">
       <button class="btn" id="shRemeasure">◎ Перемерить</button>
       <button class="btn danger" id="shDelete">Удалить</button>
@@ -154,24 +184,22 @@
     <div class="mbar" id="mbar" hidden>
       <div class="mInfo"><span id="mTitle"></span><b id="mVal">?</b></div>
       <div class="mRow">
-        <div class="mDir">
-          <button data-r="l" title="Налево" aria-label="Налево"><svg viewBox="0 0 24 24"><path d="M18 20v-7a3 3 0 00-3-3H6m4-4l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <button data-r="s" title="Прямо" aria-label="Прямо"><svg viewBox="0 0 24 24"><path d="M12 20V5m-5 5l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <button data-r="r" title="Направо" aria-label="Направо"><svg viewBox="0 0 24 24"><path d="M6 20v-7a3 3 0 013-3h9m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        </div>
         <div class="mTools">
           <button id="mUndo" title="Отменить" aria-label="Отменить"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button id="mRedo" title="Повторить" aria-label="Повторить" hidden><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5M20 9H10a6 6 0 000 12h3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <button id="mPrev" title="Предыдущая стена" aria-label="Предыдущая"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <button id="mNext" title="Пропустить" aria-label="Пропустить"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <button id="mMerge" title="Удалить поворот" aria-label="Удалить поворот"><svg viewBox="0 0 24 24"><path d="M3 15h6v-6h6v6h6" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"/><path d="M3 19h18" stroke="currentColor" stroke-width="2.4"/></svg></button>
+          <button id="mClose" title="Замкнуть комнату" aria-label="Замкнуть"><svg viewBox="0 0 24 24"><path d="M5 19V5h14v14H9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 16l-3 3 3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
           <button id="mMore" title="Подробнее" aria-label="Подробнее"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg></button>
           <button id="mStop" class="stop" title="Стоп" aria-label="Стоп"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg></button>
         </div>
       </div>
     </div>
     <form class="entry" id="entryForm" autocomplete="off">
+      <button type="button" class="undo" id="btnRedo" aria-label="Повторить" hidden><svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 14l5-5-5-5M20 9H10a6 6 0 000 12h3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button type="button" class="undo" id="btnUndo" aria-label="Отменить"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <input id="entry" inputmode="decimal" enterkeyhint="done" placeholder="Замер вручную, м — напр. 2,85">
+      <input id="entry" readonly inputmode="none" enterkeyhint="done" placeholder="Замер вручную, м — напр. 2,85">
       <button type="submit" class="primary" aria-label="Записать">✓</button>
     </form>
   </footer>
@@ -218,6 +246,8 @@
     <label class="field"><span>Объект / адрес (необязательно)</span><input id="setObj" autocomplete="off" placeholder="например: ЖК …, г. Бишкек"></label>
     <h3>Параметры</h3>
     <div class="grid2">
+      <label class="field"><span>Толщина стен, см (0 — не рисовать)</span><input id="setWallTh" inputmode="numeric" placeholder="0"></label>
+      <label class="field"><span>Лазер «спереди»: вычитать, м</span><input id="setLaserOff" inputmode="decimal" placeholder="0,13"></label>
       <label class="field"><span>Высота этажа, м (для проектного значения)</span><input id="setFloorH" inputmode="decimal" placeholder="напр. 3,00"></label>
       <label class="field"><span>Тема</span><select id="setTheme"><option value="light">Светлая</option><option value="dark">Тёмная</option></select></label>
     </div>
@@ -245,6 +275,48 @@
   </div>
 </div>
 
+<!-- Новый лист -->
+<div class="modal" id="sheetModal" hidden>
+  <div class="panel narrow">
+    <div class="panelHead"><h2>Новый лист</h2><button class="ic ghost" data-close aria-label="Закрыть">✕</button></div>
+    <label class="field"><span>Наименование</span><input id="nsTitle" autocomplete="off" placeholder="например: ЖК Ала-Тоо, секция 2"></label>
+    <div class="grid2">
+      <label class="field"><span>Блок</span><input id="nsBlock" autocomplete="off" placeholder="А"></label>
+      <label class="field"><span>Этаж</span><input id="nsFloor" inputmode="numeric" autocomplete="off"></label>
+    </div>
+    <button class="btn primary wide" id="nsCreate">Создать лист</button>
+  </div>
+</div>
+
+<!-- Цифровая клавиатура для ручного ввода -->
+<div class="keypad" id="keypad" hidden>
+  <div class="kpHead">
+    <div class="kpDisp"><b id="kpVal">0</b><span>м</span></div>
+    <button class="kpX" id="kpClose" aria-label="Закрыть">✕</button>
+  </div>
+  <div class="kpGrid">
+    <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+    <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+    <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+    <button data-k=",">,</button><button data-k="0">0</button><button data-k="bs" aria-label="Стереть">⌫</button>
+  </div>
+  <button class="btn primary wide kpOk" id="kpOk">✓ Записать</button>
+</div>
+
+<!-- Слои -->
+<div class="modal" id="layersModal" hidden>
+  <div class="panel narrow">
+    <div class="panelHead"><h2>Слои</h2><button class="ic ghost" data-close aria-label="Закрыть">✕</button></div>
+    <p class="muted small">Включённые слои показываются на экране и в PDF / DXF.</p>
+    <div id="layersList"></div>
+    <h3>Кнопки</h3>
+    <div class="row wrap">
+      <button class="btn" id="btnArrange">✥ Переставить кнопки</button>
+      <button class="btn" id="btnArrangeReset">Вернуть по стандарту</button>
+    </div>
+  </div>
+</div>
+
 <!-- Выбор этажа -->
 <div class="modal" id="floorModal" hidden>
   <div class="panel narrow">
@@ -254,7 +326,6 @@
       <input id="flIn" inputmode="numeric" type="text" autocomplete="off">
       <button class="btn" id="flPlus">+</button>
     </div>
-    <label class="check" id="flCopyRow"><input type="checkbox" id="flCopy" checked><span>Скопировать схему с <b id="flCopyFrom">16</b> этажа (если новый этаж пустой)</span></label>
     <button class="btn primary wide" id="flApply">Перейти на этаж</button>
   </div>
 </div>
@@ -282,17 +353,14 @@
       <button data-mode="save">Сохранить на телефон</button>
     </div>
     <div class="shareList">
-      <button class="shareItem main" data-kind="full"><b>📦 Отчёт одним файлом (ZIP)</b><span>Внутри: полный PDF-отчёт, DXF по блокам (мм), Excel, копия данных</span></button>
-      <button class="shareItem" data-kind="fullpdf"><b>Полный отчёт — только PDF</b><span>Сводка + все блоки и этажи: планы, площади, невязки, ведомости стен</span></button>
-      <button class="shareItem" data-kind="pdf"><b>PDF</b><span>Обмерный план, площади комнат, невязки, ведомость стен</span></button>
-      <button class="shareItem" data-kind="pdfall"><b>PDF · все этажи</b><span>Отдельные страницы для каждого обмеренного этажа блока</span></button>
-      <button class="shareItem" data-kind="dxf"><b>DXF для AutoCAD (мм)</b><span>План, обмерный контур, невязки, площади, замеры</span></button>
-      <button class="shareItem" data-kind="dxfall"><b>DXF · все этажи (мм)</b><span>Каждый этаж — на своих слоях (…_ЭТ16)</span></button>
-      <button class="shareItem" data-kind="csv"><b>Excel (CSV)</b><span>Все замеры блока</span></button>
-      <button class="shareItem" data-kind="png"><b>Картинка PNG</b><span>Обмерный план этажа</span></button>
-      <button class="shareItem" data-kind="json"><b>Копия данных</b><span>Резервная копия всех замеров (JSON)</span></button>
+      <button class="shareItem main" data-kind="tg"><b>✈ Telegram — собрать файлы</b><span>PDF поэтажный план + DXF этажа + DXF всех этажей (если их больше одного). Куда отправить — выберете сами</span></button>
+      <button class="shareItem" data-kind="pdf"><b>PDF поэтажный план</b><span>Каждый этаж с замерами — отдельный лист A4/A3 с масштабом</span></button>
+      <button class="shareItem" data-kind="dxf"><b>DXF этажа (AutoCAD, мм)</b><span>Чертёж — красным, замеры — зелёным</span></button>
+      <button class="shareItem" data-kind="dxfall"><b>DXF всех этажей (мм)</b><span>Только этажи, где есть замеры</span></button>
+      <button class="shareItem" data-kind="png"><b>Картинка PNG</b><span>Поэтажный план этажа</span></button>
+      <button class="shareItem" data-kind="json"><b>Копия данных</b><span>Резервная копия всех листов и замеров</span></button>
     </div>
-    <p class="muted small">«Отправить» откроет список приложений телефона — выберите Telegram и нужный чат («Избранное» — чтобы сохранить себе).</p>
+    <p class="muted small">«Отправить» открывает список приложений телефона: выберите Telegram или куда удобно.</p>
   </div>
 </div>
 
@@ -313,7 +381,7 @@
     <div class="tableWrap"><table id="areasTable"></table></div>
     <div class="stats" id="areasStats"></div>
     <div class="row wrap" style="margin-top:12px">
-      <button class="btn primary" id="areasPdf">Отправить PDF</button>
+      <button class="btn primary" id="areasPdf">✈ Telegram</button>
       <button class="btn" id="areasPdfSave">Сохранить PDF</button>
     </div>
   </div>
@@ -321,7 +389,9 @@
 
 <div class="modal" id="askModal" hidden>
   <div class="panel narrow">
+    <div class="panelHead" style="justify-content:flex-end;margin-bottom:-8px"><button class="ic ghost" id="askX" aria-label="Закрыть">✕</button></div>
     <p id="askText" style="font-size:16px;line-height:1.4;margin:4px 0 16px"></p>
+    <input id="askInput" class="askInput" hidden autocomplete="off">
     <div class="row"><button class="btn" id="askNo">Отмена</button><button class="btn primary" id="askOk">Да</button></div>
   </div>
 </div>
@@ -329,6 +399,7 @@
   <span>На весь экран: <b>Поделиться</b> <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align:-3px"><path d="M12 3v12M7 8l5-5 5 5M5 12v8h14v-8" fill="none" stroke="currentColor" stroke-width="2"/></svg> → <b>На экран «Домой»</b>, затем открывайте с иконки</span>
   <button id="homeTipClose" aria-label="Закрыть">✕</button>
 </div>
+<div class="arrangeBar" id="arrangeBar" hidden><span>Перетащите кнопки, куда удобно</span><button id="arrangeDone">Готово</button></div>
 <div class="toast" id="toast" hidden></div>
 <div class="readyBar" id="readyBar" hidden><span>Файл готов: <b id="readyName"></b></span><button class="btn primary" id="readyGo">Отправить</button><button class="ic ghost" onclick="this.parentNode.hidden=true">✕</button></div>
 <div class="busy" id="busy" hidden><div class="spin"></div><span id="busyText">Загрузка…</span></div>
