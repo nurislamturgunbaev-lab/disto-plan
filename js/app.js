@@ -3,6 +3,7 @@ import { Disto } from './disto.js';
 import { DxfWriter } from './dxf.js';
 import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
+import { zipOne } from './zip.js';
 
 const VERSION = '1.2.0';
 const $ = (id) => document.getElementById(id);
@@ -22,15 +23,21 @@ const UNIT_MM = { mm: 1, cm: 10, m: 1000 };
 /* ---------- хранилище (IndexedDB) ---------- */
 const DB = {
   db: null,
+  mem: new Map(), // запасной вариант, если хранилище браузера недоступно
   open() {
-    return new Promise((res, rej) => {
-      const r = indexedDB.open('disto-plan', 1);
-      r.onupgradeneeded = () => r.result.createObjectStore('kv');
-      r.onsuccess = () => { this.db = r.result; res(); };
-      r.onerror = () => rej(r.error);
+    return new Promise((res) => {
+      try {
+        const r = indexedDB.open('disto-plan', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('kv');
+        r.onsuccess = () => { this.db = r.result; res(); };
+        r.onerror = () => res();
+        r.onblocked = () => res();
+        setTimeout(res, 3000);
+      } catch (e) { res(); }
     });
   },
   get(k) {
+    if (!this.db) return Promise.resolve(this.mem.get(k));
     return new Promise((res) => {
       const t = this.db.transaction('kv').objectStore('kv').get(k);
       t.onsuccess = () => res(t.result);
@@ -38,6 +45,7 @@ const DB = {
     });
   },
   set(k, v) {
+    if (!this.db) { this.mem.set(k, v); return Promise.resolve(); }
     return new Promise((res) => {
       const tx = this.db.transaction('kv', 'readwrite');
       tx.objectStore('kv').put(v, k);
@@ -1213,6 +1221,19 @@ function setTool(t) {
 }
 
 /* ---------- сообщения ---------- */
+function ask(text, okText = 'Да', danger = false) {
+  return new Promise((res) => {
+    const m = $('askModal');
+    $('askText').textContent = text;
+    const ok = $('askOk'), no = $('askNo');
+    ok.textContent = okText; ok.className = 'btn ' + (danger ? 'danger' : 'primary');
+    no.hidden = okText === 'OK';
+    m.hidden = false;
+    const done = (v) => { m.hidden = true; ok.onclick = no.onclick = null; res(v); };
+    ok.onclick = () => done(true); no.onclick = () => done(false);
+  });
+}
+const notice = (text) => ask(text, 'OK');
 let toastT;
 function toast(s) {
   const t = $('toast'); t.textContent = s; t.hidden = false;
@@ -1271,7 +1292,26 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 /* ---------- выгрузки ---------- */
 function stamp() { const d = new Date(); return d.toISOString().slice(0, 10) + '_' + d.toTimeString().slice(0, 5).replace(':', '-'); }
+// Внутри страницы claude.ai скачивание идёт через её механизм сохранения
+let hostDl;
+function hostDownloads() {
+  if (hostDl !== undefined) return Promise.resolve(hostDl);
+  if (!window.claude?.use) { hostDl = null; return Promise.resolve(null); }
+  return window.claude.use('downloads').then((d) => (hostDl = d || null)).catch(() => (hostDl = null));
+}
+const HOST_OK = /\.(png|jpe?g|webp|gif|txt|json|md|csv|pdf|zip|svg|html|xlsx|docx)$/i;
 async function deliver(name, blob, mode = 'save') {
+  const host = await hostDownloads();
+  if (host) {
+    try {
+      if (!HOST_OK.test(name)) { blob = await zipOne(name, blob); name = name.replace(/\.[^.]+$/, '') + '.zip'; }
+      const r = await host.save({ filename: name, data: blob });
+      if (r?.status === 'saved') toast('Готово: ' + name);
+    } catch (e) {
+      if (e?.code !== 'declined') toast('Не удалось сохранить: ' + (e?.message || e?.code || e));
+    }
+    return;
+  }
   if (mode === 'share') {
     const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
     if (navigator.canShare?.({ files: [file] })) {
@@ -1593,7 +1633,7 @@ async function loadPlanFile(file) {
     $('menuModal').hidden = true;
   } catch (e) {
     console.error(e);
-    alert('Не удалось открыть файл: ' + (e.message || e));
+    notice('Не удалось открыть файл: ' + (e.message || e));
   } finally { busy(false); }
 }
 function stripPrep(plan) { return { ...plan, blocks: plan.blocks.map(({ _prep, ...b }) => b) }; }
@@ -1632,7 +1672,7 @@ function bindDisto() {
       'Либо включите на DISTO режим клавиатуры (Bluetooth HID): значения будут вводиться в поле ввода внизу автоматически.';
   btn.onclick = async () => {
     if (disto.state === 'on') {
-      if (confirm('Отключить ' + (disto.device?.name || 'DISTO') + '?')) disto.disconnect();
+      if (await ask('Отключить ' + (disto.device?.name || 'DISTO') + '?', 'Отключить')) disto.disconnect();
       return;
     }
     if (!Disto.supported()) { $('menuModal').hidden = false; renderPlanInfo(); $('distoHelp').scrollIntoView(); return; }
@@ -1694,7 +1734,7 @@ function bindMenu() {
   $('areasPdfSave').onclick = () => shareKind('pdf', 'save');
   $('filePlan').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) loadPlanFile(f); };
   $('btnDefaultPlan').onclick = async () => {
-    if (!confirm('Вернуть встроенный план (блоки А, Б, В, Г)? Замеры сохранятся.')) return;
+    if (!(await ask('Вернуть встроенный план (блоки А, Б, В, Г)? Замеры сохранятся.', 'Вернуть'))) return;
     setPlan(structuredClone(DEFAULT_PLAN)); await DB.set('plan', null); $('menuModal').hidden = true;
   };
   const fh = $('setFloorH');
@@ -1721,14 +1761,14 @@ function bindMenu() {
     try {
       const d = JSON.parse(await f.text());
       if (!Array.isArray(d.items)) throw new Error('нет замеров');
-      if (!confirm(`Восстановить ${d.items.length} замеров? Текущие будут заменены.`)) return;
+      if (!(await ask(`Восстановить ${d.items.length} замеров? Текущие будут заменены.`, 'Восстановить'))) return;
       pushUndo(); S.items = d.items; if (d.settings) Object.assign(S.settings, d.settings);
       if (d.plan?.blocks) { setPlan(d.plan); await DB.set('plan', d.plan); }
       save(); draw(); toast('Восстановлено'); $('menuModal').hidden = true;
-    } catch (err) { alert('Файл не подходит: ' + err.message); }
+    } catch (err) { notice('Файл не подходит: ' + err.message); }
   };
-  $('btnClear').onclick = () => {
-    if (!confirm('Удалить ВСЕ замеры во всех блоках? (можно отменить кнопкой «Отменить»)')) return;
+  $('btnClear').onclick = async () => {
+    if (!(await ask('Удалить ВСЕ замеры во всех блоках? (можно вернуть кнопкой «Отменить»)', 'Удалить', true))) return;
     pushUndo(); S.items = []; select(null); save(); draw(); $('menuModal').hidden = true;
   };
   // до этажа
