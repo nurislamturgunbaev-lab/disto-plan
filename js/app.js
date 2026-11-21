@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.0.3';
+const VERSION = '2.0.4';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -2444,24 +2444,52 @@ function currentDir() {
   if (S.tool === 'sketch') {
     const sk = skmItem();
     if (sk) return sk.dirs[S.skm.i];
-    if (S.draft) return sketchLastDir() + (skItem()?.dirs.length ? REL[S.sketchRel || 's'] : 0);
+    if (S.draft) return sketchLastDir(); // «голова змейки» — последняя линия смотрит вверх
     return null;
   }
   if (S.tool === 'walls' && S.selSeg) { const sg = wallsOf().byKey.get(S.selSeg); return sg ? wallCurDir(sg) : null; }
   return null;
 }
-/** Плавный поворот плана так, чтобы текущая линия смотрела вверх; кнопки не крутятся */
+/** «Голова змейки» — конец текущей линии (мир) */
+function currentHead() {
+  if (S.tool === 'sketch') {
+    const sk = skmItem();
+    if (sk) { const n = sk.pts.length / 2, j = (S.skm.i + 1) % n; return { x: sk.pts[j * 2], y: sk.pts[j * 2 + 1] }; }
+    if (S.draft) return draftFrom();
+    return null;
+  }
+  if (S.tool === 'walls' && S.selSeg) { const sg = wallsOf().byKey.get(S.selSeg); return sg ? { x: sg.bx, y: sg.by } : null; }
+  return null;
+}
+/** Поворот «змейкой»: текущая линия смотрит вверх, её конец стоит в центре экрана, план движется вокруг; кнопки не крутятся */
 function stepRotation() {
   const v = V();
-  let target = 0;
-  if (S.settings.rotate) { const d = currentDir(); if (d == null) return false; target = ((d - 90) * Math.PI) / 180; }
+  let target = 0, head = null;
+  if (S.settings.rotate) {
+    const d = currentDir(); if (d == null) return false;
+    target = ((d - 90) * Math.PI) / 180; head = currentHead();
+  }
   let diff = target - (v.rot || 0);
   while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
-  if (Math.abs(diff) < 0.002) { if (v.rot && Math.abs(v.rot) < 0.002) v.rot = 0; return false; }
-  const cx = cv.clientWidth / 2, cy = cv.clientHeight / 2;
-  const c0 = screenToWorld(cx, cy, v);
+  const cx = cv.clientWidth / 2, cy = cv.clientHeight * 0.55;
+  let moving = Math.abs(diff) >= 0.002;
+  if (head) {
+    const key = head.x.toFixed(3) + ',' + head.y.toFixed(3) + ',' + target.toFixed(3);
+    if (v.snakeDone === key) return false; // уже на месте — можно свободно двигать план пальцем
+    const h = w2s(head.x, head.y, v);
+    const dx = cx - h.x, dy = cy - h.y;
+    if (Math.hypot(dx, dy) > 0.5) moving = true;
+    if (!moving) { v.snakeDone = key; return false; }
+    v.rot = (v.rot || 0) + (Math.abs(diff) < 0.002 ? diff : diff * 0.22);
+    placeWorldAt(v, head.x, head.y, h.x + dx * 0.22, h.y + dy * 0.22);
+    if (Math.hypot(dx, dy) <= 0.5 && Math.abs(diff) < 0.002) { placeWorldAt(v, head.x, head.y, cx, cy); v.snakeDone = key; return false; }
+    return true;
+  }
+  if (!moving) { if (v.rot && Math.abs(v.rot) < 0.002) v.rot = 0; return false; }
+  const ccx = cv.clientWidth / 2, ccy = cv.clientHeight / 2;
+  const c0 = screenToWorld(ccx, ccy, v);
   v.rot = (v.rot || 0) + diff * 0.22;
-  placeWorldAt(v, c0.x, c0.y, cx, cy);
+  placeWorldAt(v, c0.x, c0.y, ccx, ccy);
   return true;
 }
 function syncCompass() {
@@ -2492,7 +2520,7 @@ function bindTools() {
   };
   $('btnFocus').onclick = () => setFocus(true);
   $('btnPolar').onclick = () => { S.settings.polar = !S.settings.polar; if (S.settings.polar) S.settings.ortho = false; syncSnapUI(); save(); toast('Полярные углы 5° ' + (S.settings.polar ? 'включены' : 'выключены')); };
-  $('btnRot').onclick = () => { S.settings.rotate = !S.settings.rotate; syncSnapUI(); save(); draw(); toast(S.settings.rotate ? 'План поворачивается по текущей линии' : 'Поворот плана выключен'); };
+  $('btnRot').onclick = () => { S.settings.rotate = !S.settings.rotate; syncSnapUI(); save(); draw(); toast(S.settings.rotate ? 'Змейка: текущая линия в центре, план крутится вокруг неё' : 'Поворот плана выключен'); };
   $('compass').onclick = () => { S.settings.rotate = false; syncSnapUI(); save(); draw(); };
   for (const b of $('openPad').querySelectorAll('[data-ot]')) b.onclick = () => {
     S.openArm = S.openArm === b.dataset.ot ? null : b.dataset.ot; syncOpenPad();
