@@ -52,20 +52,26 @@ export function buildWalls(polys, unitM, opts = {}) {
     A /= 2;
     if (closed && Math.abs(A) > 1e-9) { cx /= 6 * A; cy /= 6 * A; }
     else { cx = 0; cy = 0; for (let i = 0; i < n; i++) { cx += v[i * 2]; cy += v[i * 2 + 1]; } cx /= n; cy /= n; }
-    const side = closed ? (A >= 0 ? 1 : -1) : 1;
-    const segs = [];
+    // обход каждой комнаты — против часовой стрелки (как видно на плане);
+    // ключ стены остаётся прежним (по исходному номеру отрезка), чтобы старые замеры не потерялись
+    const reverse = closed && A < 0;
+    const side = closed ? 1 : 1;
+    let segs = [];
     const m = closed ? n : n - 1;
     for (let i = 0; i < m; i++) {
       const j = (i + 1) % n;
-      const ax = v[i * 2], ay = v[i * 2 + 1], bx = v[j * 2], by = v[j * 2 + 1];
+      let ax = v[i * 2], ay = v[i * 2 + 1], bx = v[j * 2], by = v[j * 2 + 1];
+      if (reverse) { [ax, bx] = [bx, ax]; [ay, by] = [by, ay]; }
       const L = Math.hypot(bx - ax, by - ay);
       if (L < minLen) continue;
       segs.push({
         key: pi + ':' + i, pi, ax, ay, bx, by,
         len: L * unitM,
-        nx: (-(by - ay) / L) * side, ny: ((bx - ax) / L) * side, // нормаль внутрь комнаты
+        nx: (-(by - ay) / L) * side, ny: ((bx - ax) / L) * side, // нормаль внутрь комнаты (слева при обходе против часовой)
+        rev: reverse,
       });
     }
+    if (reverse) segs.reverse();
     const total = segs.reduce((t, s) => t + s.len, 0);
     if (!closed && total < 1) return; // обрывки линий
     if (segs.length) rooms.push({ pi, cx, cy, area: Math.abs(A) * unitM * unitM, closed, segs });
