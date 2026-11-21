@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#14213d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>DISTO · План</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="brand" id="btnMenu" role="button" aria-label="Меню">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span>DISTO<b>·</b>План</span>
+    </div>
+    <div class="blocks" id="blocks"></div>
+    <button class="disto" id="btnDisto" data-state="off" aria-label="Подключить DISTO">
+      <i class="dot"></i><span id="distoLabel">DISTO</span>
+    </button>
+  </header>
+
+  <div class="subbar">
+    <div class="floor">
+      <button class="ic" id="floorDown" aria-label="Этаж ниже">−</button>
+      <button class="floorVal" id="floorVal"><small>этаж</small><b id="floorNum">16</b></button>
+      <button class="ic" id="floorUp" aria-label="Этаж выше">+</button>
+    </div>
+    <div class="seg" id="dirSeg">
+      <button data-dir="down" class="on">↓ Вниз</button>
+      <button data-dir="up">↑ Вверх</button>
+    </div>
+    <button class="chip" id="toFloorChip">до <b id="toFloorNum">15</b></button>
+  </div>
+
+  <main class="stage" id="stage">
+    <canvas id="cv"></canvas>
+    <div class="hud">
+      <div class="last" id="lastBox" hidden>
+        <small id="lastSrc">DISTO</small>
+        <b id="lastVal">0,00</b><span>м</span>
+      </div>
+    </div>
+    <div class="hint" id="hint"></div>
+    <div class="draftbar" id="draftbar" hidden>
+      <button id="draftUndo">↶ Точка</button>
+      <button id="draftDone" class="primary">Готово</button>
+      <button id="draftCancel">✕</button>
+    </div>
+    <button class="fit" id="btnFit" aria-label="Показать весь блок">
+      <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <button class="measure" id="btnTrigger" hidden aria-label="Измерить">
+      <svg viewBox="0 0 24 24" width="26" height="26"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+    </button>
+    <section class="sheet" id="sheet" hidden>
+    <div class="sheetHead">
+      <div>
+        <div class="sheetTitle" id="shTitle">Точка №1</div>
+        <div class="sheetSub" id="shSub"></div>
+      </div>
+      <button class="ic ghost" id="shClose" aria-label="Закрыть">✕</button>
+    </div>
+    <div class="grid2">
+      <label class="field big">
+        <span>Замер, м</span>
+        <input id="shValue" inputmode="decimal" autocomplete="off" placeholder="ожидает DISTO">
+      </label>
+      <label class="field">
+        <span>Проект, м</span>
+        <input id="shDesign" inputmode="decimal" autocomplete="off" placeholder="—">
+      </label>
+    </div>
+    <div class="dev" id="shDev"></div>
+    <div class="grid3" id="shFloorRow">
+      <label class="field"><span>Этаж</span><input id="shFloor" inputmode="numeric"></label>
+      <label class="field"><span>Направление</span>
+        <select id="shDir"><option value="down">↓ вниз</option><option value="up">↑ вверх</option></select></label>
+      <label class="field"><span>До этажа</span><input id="shTo" inputmode="numeric"></label>
+    </div>
+    <label class="field"><span>Примечание</span><input id="shNote" autocomplete="off" placeholder="например: шахта лифта, ось 3/Б"></label>
+    <div class="row">
+      <button class="btn" id="shRemeasure">◎ Перемерить</button>
+      <button class="btn danger" id="shDelete">Удалить</button>
+    </div>
+  </section>
+  </main>
+
+
+  <footer class="bottom">
+    <form class="entry" id="entryForm" autocomplete="off">
+      <input id="entry" inputmode="decimal" enterkeyhint="done" placeholder="Замер вручную, м — напр. 2,85">
+      <button type="submit" class="primary" aria-label="Записать">✓</button>
+    </form>
+    <nav class="tools" id="tools">
+      <button data-tool="select" class="on"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Выбор</span></button>
+      <button data-tool="point"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3" fill="currentColor"/><path d="M12 21s-7-6.5-7-11a7 7 0 0114 0c0 4.5-7 11-7 11z" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Точка</span></button>
+      <button data-tool="line"><svg viewBox="0 0 24 24"><path d="M4 18L20 6M4 14v8M20 2v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Размер</span></button>
+      <button data-tool="sketch"><svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Чертить</span></button>
+      <button id="btnUndo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Отменить</span></button>
+      <button id="btnList"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Журнал</span></button>
+    </nav>
+  </footer>
+</div>
+
+<!-- Журнал замеров -->
+<div class="modal" id="listModal" hidden>
+  <div class="panel">
+    <div class="panelHead">
+      <h2>Журнал замеров</h2>
+      <button class="ic ghost" data-close>✕</button>
+    </div>
+    <div class="row wrap">
+      <div class="seg small" id="listScope">
+        <button data-scope="floor" class="on">Этот этаж</button>
+        <button data-scope="block">Весь блок</button>
+        <button data-scope="all">Все блоки</button>
+      </div>
+    </div>
+    <div class="tableWrap"><table id="listTable"></table></div>
+    <div class="stats" id="listStats"></div>
+    <h3>Выгрузка</h3>
+    <div class="row wrap">
+      <button class="btn" id="expDxf">DXF этаж (мм)</button>
+      <button class="btn" id="expDxfAll">DXF все этажи</button>
+      <button class="btn" id="expCsv">Excel CSV</button>
+      <button class="btn" id="expPng">PNG</button>
+    </div>
+  </div>
+</div>
+
+<!-- Меню -->
+<div class="modal" id="menuModal" hidden>
+  <div class="panel">
+    <div class="panelHead">
+      <h2>Меню</h2>
+      <button class="ic ghost" data-close>✕</button>
+    </div>
+    <h3>План</h3>
+    <p class="muted" id="planInfo"></p>
+    <div class="row wrap">
+      <label class="btn primary file">Загрузить план DWG / DXF<input type="file" id="filePlan" accept=".dwg,.dxf,.json" hidden></label>
+      <button class="btn" id="btnDefaultPlan">Вернуть встроенный план</button>
+    </div>
+    <div id="blockNames"></div>
+
+    <h3>Параметры</h3>
+    <div class="grid2">
+      <label class="field"><span>Высота этажа, м (для проектного значения)</span><input id="setFloorH" inputmode="decimal" placeholder="напр. 3,00"></label>
+      <label class="field"><span>Тема</span><select id="setTheme"><option value="light">Светлая</option><option value="dark">Тёмная</option></select></label>
+    </div>
+    <label class="check"><input type="checkbox" id="setOtherFloors"> Показывать замеры других этажей (бледно)</label>
+    <label class="check"><input type="checkbox" id="setSnap" checked> Привязка к углам чертежа</label>
+    <label class="check"><input type="checkbox" id="setBeep" checked> Звук и вибрация при записи</label>
+
+    <h3>Данные</h3>
+    <div class="row wrap">
+      <button class="btn" id="btnBackup">Сохранить копию (JSON)</button>
+      <label class="btn file">Восстановить из копии<input type="file" id="fileBackup" accept=".json" hidden></label>
+      <button class="btn danger" id="btnClear">Удалить все замеры</button>
+    </div>
+
+    <h3>Leica DISTO</h3>
+    <div class="muted small" id="distoHelp"></div>
+    <details><summary>Журнал Bluetooth</summary><pre id="distoLog"></pre></details>
+    <p class="muted small">Версия <span id="ver"></span></p>
+  </div>
+</div>
+
+<!-- Параметры замера: до этажа -->
+<div class="modal" id="toModal" hidden>
+  <div class="panel narrow">
+    <div class="panelHead"><h2>Замер с этажа <span id="toFrom"></span></h2><button class="ic ghost" data-close>✕</button></div>
+    <div class="grid2">
+      <label class="field"><span>Этаж</span><input id="toFloorIn" inputmode="numeric"></label>
+      <label class="field"><span>До этажа</span><input id="toFloorTo" inputmode="numeric"></label>
+    </div>
+    <p class="muted small">Проектное значение считается как разница этажей × высота этажа (задаётся в меню). Его можно изменить у каждой точки.</p>
+    <button class="btn primary wide" id="toApply">Применить</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<div class="busy" id="busy" hidden><div class="spin"></div><span id="busyText">Загрузка…</span></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
