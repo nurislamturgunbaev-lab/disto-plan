@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.0.8';
+const VERSION = '2.0.9';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -788,6 +788,7 @@ cv.addEventListener('pointerdown', (e) => {
       if (Math.hypot(q.x - p.x, q.y - p.y) < 26) { gesture = { type: 'slope', sh, start: p, moved: false }; return; }
     }
   }
+  if (S.turnArm) { pushUndo(); const t = turnToward(p.x, p.y); if (t) toast('Поворот: ' + t, true); gesture = { type: 'turn', start: p, moved: true }; requestDraw(); return; }
   // в режимах черчения/проёмов/рулетки нажатие идёт в инструмент; перетаскивать можно только двери и окна
   const freeHit = ['select', 'point', 'line', 'walls'].includes(S.tool) && !S.openArm;
   const op0 = !S.draft ? pickOpen(p.x, p.y) : null;
@@ -823,6 +824,7 @@ cv.addEventListener('pointermove', (e) => {
     requestDraw();
     return;
   }
+  if (gesture.type === 'turn') { const t = turnToward(p.x, p.y); if (t) toast('Поворот: ' + t, true); requestDraw(); return; }
   const dx = p.x - gesture.start.x, dy = p.y - gesture.start.y;
   if (!gesture.moved && Math.hypot(dx, dy) < 7) return;
   if (!gesture.moved) { gesture.moved = true; if (gesture.type === 'drag' || gesture.type === 'slope') pushUndo(); }
@@ -887,6 +889,7 @@ function endPtr(e) {
   if (gesture.type === 'pinch') { if (ptrs.size === 0) gesture = null; else gesture = { type: 'none' }; return; }
   const g = gesture; gesture = null;
   if (g.type === 'slope') { if (g.moved) { save(); hint(''); } draw(); return; }
+  if (g.type === 'turn') { S.turnArm = false; syncOpenPad(); save(); draw(); return; }
   if (g.type === 'drag') {
     snapMark = null;
     if (g.moved) { save(); refreshSheet(); }
@@ -2460,6 +2463,7 @@ function syncSnapUI() {
 }
 function syncOpenPad() {
   for (const b of $('openPad').querySelectorAll('[data-ot]')) b.classList.toggle('on', b.dataset.ot === S.openArm);
+  $('btnTurn').classList.toggle('on', !!S.turnArm);
 }
 /** Направление текущей линии/стены (градусы) — для поворота плана */
 function currentDir() {
@@ -2486,6 +2490,7 @@ function currentHead() {
 /** Поворот «змейкой»: текущая линия смотрит вверх, её конец стоит в центре экрана, план движется вокруг; кнопки не крутятся */
 function stepRotation() {
   const v = V();
+  if (gesture && gesture.type === 'turn') return false;
   let target = 0, head = null;
   if (S.settings.rotate) {
     const d = currentDir(); if (d == null) return false;
@@ -2545,7 +2550,7 @@ function bindTools() {
   $('btnRot').onclick = () => { S.settings.rotate = !S.settings.rotate; syncSnapUI(); save(); draw(); toast(S.settings.rotate ? 'Змейка: текущая линия в центре, план крутится вокруг неё' : 'Поворот плана выключен'); };
   $('compass').onclick = () => { S.settings.rotate = false; syncSnapUI(); save(); draw(); };
   for (const b of $('openPad').querySelectorAll('[data-ot]')) b.onclick = () => {
-    S.openArm = S.openArm === b.dataset.ot ? null : b.dataset.ot; syncOpenPad();
+    S.turnArm = false; S.openArm = S.openArm === b.dataset.ot ? null : b.dataset.ot; syncOpenPad();
   };
   $('btnFocusExit').onclick = () => setFocus(false);
   document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && focusMode && !/iPhone/.test(navigator.userAgent)) setFocus(false); });
@@ -3390,7 +3395,7 @@ function closeTopmost() {
   if (document.body.classList.contains('arrange')) { setArrange(false); return true; }
   if (!$('toolsPop').hidden) { $('toolsPop').hidden = true; return true; }
   if (!$('sheet').hidden) { $('shClose').click(); return true; }
-  if (S.openArm) { S.openArm = null; syncOpenPad(); return true; }
+  if (S.openArm || S.turnArm) { S.openArm = null; S.turnArm = false; syncOpenPad(); return true; }
   if (focusMode) { setFocus(false); return true; }
   return false;
 }
@@ -3411,6 +3416,21 @@ function turnTarget() {
   if (it?.dirs?.length) return { it, k: it.dirs.length - 1 };
   const last = curItems().filter((i) => i.kind === 'sketch' && i.dirs?.length && !i.closed).sort((a, b) => (b.t || 0) - (a.t || 0))[0];
   return last ? { it: last, k: last.dirs.length - 1 } : null;
+}
+/** Повернуть последнюю линию к точке экрана (шаг 5°) */
+function turnToward(sx, sy) {
+  const tt = turnTarget(); if (!tt) return null;
+  const { it, k } = tt;
+  const a = { x: it.pts[k * 2], y: it.pts[k * 2 + 1] }, w = screenToWorld(sx, sy);
+  if (Math.hypot(w.x - a.x, w.y - a.y) * V().s < 10) return null;
+  let deg = Math.round(((Math.atan2(w.y - a.y, w.x - a.x) * 180) / Math.PI) / 5) * 5;
+  deg = ((deg % 360) + 360) % 360;
+  if (it.dirs[k] !== deg) {
+    it.dirs[k] = deg; rebuildSketch(it);
+    if (S.draft?.itemId === it.id) S.draft.pts = it.pts.slice();
+  }
+  let rel = deg - skPrevDir(it, k); while (rel > 180) rel -= 360; while (rel <= -180) rel += 360;
+  return k === 0 && !it.closed ? `${deg}°` : rel === 0 ? 'прямо' : `${rel > 0 ? 'налево' : 'направо'} ${Math.abs(rel)}°`;
 }
 function turnLast(sign) {
   const n = parseNum(kpStr);
@@ -3447,7 +3467,12 @@ function bindEntry() {
   $('kpOk').onclick = kpOk;
   $('kpLeft').onclick = () => turnLast(1);
   $('kpRight').onclick = () => turnLast(-1);
-  $('btnTurn').onclick = () => { if (!turnTarget()) { toast('Сначала начертите линию', true); return; } kpShow(true); };
+  $('btnTurn').onclick = () => {
+    if (S.turnArm) { S.turnArm = false; syncOpenPad(); return; }
+    if (!turnTarget()) { toast('Сначала начертите линию', true); return; }
+    S.openArm = null; S.turnArm = true; syncOpenPad();
+    toast('Нажмите на экран — куда повернуть последнюю линию', true);
+  };
   $('kpClose').onclick = kpClose;
   // в любом поле для чисел: «ю»/«б» (русская раскладка) → запятая
   document.addEventListener('input', (e) => {
