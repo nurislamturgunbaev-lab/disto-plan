@@ -5,7 +5,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '1.8.0';
+const VERSION = '1.8.1';
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
 
@@ -1719,11 +1719,11 @@ function copyFloor(from, to) {
   }
   return n;
 }
-function setFloor(f, keepTo) {
+function setFloor(f, keepTo, noCopy) {
   const from = S.floor;
   if (f !== from) {
     pushUndo();
-    const n = copyFloor(from, f);
+    const n = noCopy ? 0 : copyFloor(from, f);
     if (n) toast(`Схема ${from} этажа скопирована на ${f} этаж — перемерьте стены, серые значения взяты с ${from} эт.`);
     else S.undo.pop();
     S.session = false;
@@ -2662,7 +2662,39 @@ function bindMenu() {
     pushUndo(); S.items = []; select(null); save(); draw(); $('menuModal').hidden = true;
   };
   // до этажа
-  $('toFloorChip').onclick = $('floorVal').onclick = () => {
+  // выбор этажа: нажмите на номер этажа
+  $('floorVal').onclick = () => {
+    $('flIn').value = S.floor;
+    $('flCopyFrom').textContent = S.floor;
+    $('flCopyRow').hidden = !curItems().length;
+    $('floorModal').hidden = false;
+    setTimeout(() => { $('flIn').focus(); $('flIn').select(); }, 50);
+  };
+  $('flMinus').onclick = () => { $('flIn').value = (parseInt($('flIn').value, 10) || S.floor) - 1; };
+  $('flPlus').onclick = () => { $('flIn').value = (parseInt($('flIn').value, 10) || S.floor) + 1; };
+  const applyFloor = () => {
+    const f = parseInt($('flIn').value, 10);
+    if (isNaN(f)) { toast('Введите номер этажа'); return; }
+    $('floorModal').hidden = true;
+    setFloor(f, false, !$('flCopy').checked);
+    toast(`Этаж ${f}`);
+  };
+  $('flApply').onclick = applyFloor;
+  $('flIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyFloor(); } });
+  // очистить этаж
+  const clearFloor = async () => {
+    const its = curItems();
+    if (!its.length) { toast('На этом этаже нечего очищать'); return; }
+    if (!(await ask(`Очистить блок ${S.block}, этаж ${S.floor}?\nУдалится всё на этом этаже: замеры стен, двери и окна, линии, точки (${its.length}). Другие этажи не затрагиваются. Можно вернуть кнопкой «Отменить».`, 'Очистить', true))) return;
+    pushUndo();
+    S.items = S.items.filter((i) => !(i.block === S.block && i.floor === S.floor));
+    S.session = false; S.selSeg = null; S.draft = null; select(null);
+    if (isBlank()) startBlankDraft();
+    save(); draw(); toast(`Этаж ${S.floor} очищен`);
+  };
+  $('btnClearFloor').onclick = () => { $('toolsPop').hidden = true; clearFloor(); };
+  $('btnClearFloor2').onclick = () => { $('menuModal').hidden = true; clearFloor(); };
+  $('toFloorChip').onclick = () => {
     $('toFrom').textContent = S.floor; $('toFloorIn').value = S.floor; $('toFloorTo').value = S.toFloor ?? '';
     $('toModal').hidden = false;
   };
