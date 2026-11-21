@@ -34,7 +34,9 @@
       <button data-tool="line"><svg viewBox="0 0 24 24"><path d="M4 18L20 6M4 14v8M20 2v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Размер</span></button>
       <button data-tool="sketch"><svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Чертить</span></button>
       <button id="btnList"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Журнал</span></button>
+      <button data-tool="open"><svg viewBox="0 0 24 24"><path d="M3 20h4M17 20h4M7 20V9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 9a11 11 0 0110 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2 2"/><path d="M3 4h18M3 7h18" stroke="currentColor" stroke-width="1.6"/></svg><span>Двери/окна</span></button>
       <button id="btnAreas"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 15l3-6 3 4 2-2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Площади</span></button>
+      <button id="btnDocs"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 2v6h6M9 13h8M9 17h8" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Документы</span></button>
       <button id="btnShare"><svg viewBox="0 0 24 24"><path d="M21 3L3 10l7 3 3 7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 13l11-10" stroke="currentColor" stroke-width="2"/></svg><span>Отправить</span></button>
     </div>
     <div class="snapHead">Привязки <small>(как в AutoCAD)</small></div>
@@ -69,6 +71,10 @@
       </div>
     </div>
     <div class="hint" id="hint"></div>
+    <div class="draftbar" id="openBar" hidden>
+      <button data-ot="door" class="on">🚪 Дверь</button>
+      <button data-ot="window">🪟 Окно</button>
+    </div>
     <div class="draftbar" id="draftbar" hidden>
       <button id="draftUndo">↶ Точка</button>
       <button id="draftDone" class="primary">Готово</button>
@@ -101,6 +107,11 @@
       </label>
     </div>
     <div class="dev" id="shDev"></div>
+    <div class="grid2o" id="shOpen" hidden>
+      <label class="field"><span>Тип</span><select id="shOType"><option value="door">Дверь</option><option value="window">Окно</option></select></label>
+      <label class="field"><span>Ширина, м</span><input id="shOW" inputmode="decimal" autocomplete="off"></label>
+      <button class="btn" id="shOFlip" style="grid-column:1/-1">⟲ Сторона открывания двери</button>
+    </div>
     <div class="grid2" id="shSlope" hidden>
       <label class="field"><span>Уклон стены, °</span><input id="shAng" inputmode="decimal" autocomplete="off" placeholder="0"></label>
       <label class="field"><span>Смещение конца, м</span><input id="shOff" inputmode="decimal" autocomplete="off" placeholder="0,00"></label>
@@ -173,6 +184,13 @@
     </div>
     <div id="blockNames"></div>
 
+    <h3>Штамп чертежа</h3>
+    <label class="field"><span>План составил (ФИО)</span><input id="setAuthor" autocomplete="off" placeholder="например: Расул уулу А."></label>
+    <label class="field"><span>Объект / адрес (необязательно)</span><input id="setObj" autocomplete="off" placeholder="например: ЖК …, г. Бишкек"></label>
+    <div class="row wrap">
+      <button class="btn" id="btnSig">✍ Подпись</button>
+      <span class="muted small" id="sigState" style="align-self:center"></span>
+    </div>
     <h3>Параметры</h3>
     <div class="grid2">
       <label class="field"><span>Высота этажа, м (для проектного значения)</span><input id="setFloorH" inputmode="decimal" placeholder="напр. 3,00"></label>
@@ -234,6 +252,28 @@
       <button class="shareItem" data-kind="json"><b>Копия данных</b><span>Резервная копия всех замеров (JSON)</span></button>
     </div>
     <p class="muted small">«Отправить» откроет список приложений телефона — выберите Telegram и нужный чат («Избранное» — чтобы сохранить себе).</p>
+  </div>
+</div>
+
+<!-- Документы -->
+<div class="modal" id="docsModal" hidden>
+  <div class="panel">
+    <div class="panelHead"><h2>Документы</h2><button class="ic ghost" data-close>✕</button></div>
+    <p class="muted small">Все сформированные PDF, DXF и другие файлы сохраняются здесь автоматически — их можно отправить ещё раз.</p>
+    <div id="docsList" class="shareList"></div>
+  </div>
+</div>
+
+<!-- Подпись -->
+<div class="modal" id="sigModal" hidden>
+  <div class="panel narrow">
+    <div class="panelHead"><h2>Подпись</h2><button class="ic ghost" data-close>✕</button></div>
+    <p class="muted small">Распишитесь пальцем — подпись будет ставиться в штамп «План составил» на PDF, картинке и DXF.</p>
+    <canvas id="sigPad" class="sigPad"></canvas>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="sigClear">Очистить</button>
+      <button class="btn primary" id="sigSave">Сохранить</button>
+    </div>
   </div>
 </div>
 

@@ -2,7 +2,12 @@
 
 // Текст пишется в кодировке Windows-1251 ($DWGCODEPAGE ANSI_1251) — так кириллицу читают все версии AutoCAD.
 const SUB = { '−': '-', '—': '-', '–': '-', '↓': 'v', '↑': '^', '·': '.' };
-function enc(s) { return String(s).replace(/[−—–↓↑·]/g, (c) => SUB[c]); }
+function enc(s) {
+  return String(s)
+    .replace(/[−—–↓↑·]/g, (c) => SUB[c])
+    // символы вне Windows-1251 (кыргызские Ү, Ө, Ң и др.) — кодом \U+XXXX, его понимает AutoCAD
+    .replace(/[^\x00-\x7f\u0410-\u044f\u0401\u0451\u2116\u00b0]/g, (c) => '\\U+' + c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0'));
+}
 function cp1251(str) {
   const out = new Uint8Array(str.length);
   for (let i = 0; i < str.length; i++) {

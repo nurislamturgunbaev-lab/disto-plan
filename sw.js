@@ -1,5 +1,5 @@
 // Офлайн-работа: оболочка приложения кэшируется, модуль DWG — при первом использовании.
-const CACHE = 'disto-plan-v1.2.0';
+const CACHE = 'disto-plan-v1.3.0';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/disto.js', 'js/dxf.js', 'js/cad.js', 'js/walls.js', 'js/pdf.js', 'js/zip.js', 'js/default-plan.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
