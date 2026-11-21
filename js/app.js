@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.1.1';
+const VERSION = '2.1.2';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -2535,11 +2535,11 @@ function bindTools() {
   $('btnTools').onclick = (e) => { e.stopPropagation(); pop.hidden = !pop.hidden; };
   document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !$('btnTools').contains(e.target)) pop.hidden = true; });
   for (const b of $('tools').querySelectorAll('[data-tool]')) b.onclick = () => { setTool(b.dataset.tool); pop.hidden = true; };
-  $('btnList').onclick = () => { pop.hidden = true; renderList(); $('listModal').hidden = false; };
-  $('btnAreas').onclick = () => { pop.hidden = true; renderAreas(); $('areasModal').hidden = false; };
-  $('btnShare').onclick = () => { pop.hidden = true; openShare(); };
+  $('btnList').onclick = () => { pop.hidden = true; $('menuModal').hidden = true; renderList(); $('listModal').hidden = false; };
+  $('btnAreas').onclick = () => { pop.hidden = true; $('menuModal').hidden = true; renderAreas(); $('areasModal').hidden = false; };
+  $('btnShare').onclick = () => { pop.hidden = true; $('menuModal').hidden = true; openShare(); };
   $('btnReport').onclick = () => { pop.hidden = true; shareKind('tg', 'share'); };
-  $('btnDocs').onclick = () => { pop.hidden = true; renderDocs(); $('docsModal').hidden = false; };
+  $('btnDocs').onclick = () => { pop.hidden = true; $('menuModal').hidden = true; renderDocs(); $('docsModal').hidden = false; };
   for (const b of $('snaps').children) b.onclick = () => {
     const k = b.dataset.snap;
     if (k === 'ortho') S.settings.ortho = !S.settings.ortho;
@@ -3652,8 +3652,7 @@ function bindMenu() {
     if (isBlank()) startBlankDraft();
     save(); draw(); toast(`Этаж ${S.floor} очищен`);
   };
-  $('btnClearFloor').onclick = () => { $('toolsPop').hidden = true; clearFloor(); };
-  $('btnClearFloor2').onclick = () => { $('menuModal').hidden = true; clearFloor(); };
+  $('btnClearFloor').onclick = () => { $('toolsPop').hidden = true; $('menuModal').hidden = true; clearFloor(); };
   $('toFloorChip').onclick = () => {
     $('toFrom').textContent = S.floor; $('toFloorIn').value = S.floor; $('toFloorTo').value = S.toFloor ?? '';
     $('toModal').hidden = false;
@@ -3716,7 +3715,7 @@ async function init() {
     createSheet($('nsTitle').value, $('nsBlock').value, f);
   };
   for (const id of ['nsTitle', 'nsBlock', 'nsFloor']) $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('nsCreate').click(); });
-  $('btnLayers').onclick = () => { $('toolsPop').hidden = true; renderLayers(); $('layersModal').hidden = false; };
+  $('btnLayers').onclick = () => { $('toolsPop').hidden = true; $('menuModal').hidden = true; renderLayers(); $('layersModal').hidden = false; };
   $('toolsX').onclick = () => { $('toolsPop').hidden = true; };
   $('btnRedo').onclick = doRedo;
   $('shRCopy').onclick = () => { const it = S.items.find((i) => i.id === S.selId); if (it) roomCopy(it); };

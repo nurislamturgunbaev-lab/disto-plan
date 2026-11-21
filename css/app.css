@@ -418,3 +418,6 @@ body.arrange [data-fl] { outline: 2px dashed var(--accent2); outline-offset: 2px
 .kpTurn[hidden] { display: none; }
 .kpTurn .btn { height: 52px; font-size: 16px; font-weight: 700; background: var(--accent2); color: #fff; }
 .kpOk[hidden] { display: none; }
+
+.menuTools { grid-template-columns: repeat(3, 1fr); margin: 4px 0 8px; background: var(--bg); border-radius: 14px; padding: 4px; }
+.menuTools button { font-size: 12px; }
