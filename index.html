@@ -20,11 +20,32 @@
       <span>DISTO<b>·</b>План</span>
     </div>
     <div class="blocks" id="blocks"></div>
+    <button class="toolBtn" id="btnTools" aria-label="Инструменты"><span id="toolIcon"></span><b id="toolName">Стены</b><i>▾</i></button>
     <button class="disto" id="btnDisto" data-state="off" aria-label="Подключить DISTO">
       <i class="dot"></i><span id="distoLabel">DISTO</span>
     </button>
   </header>
 
+  <div class="toolsPop" id="toolsPop" hidden>
+    <div class="tools" id="tools">    
+      <button data-tool="walls" class="on"><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 5h18" stroke="currentColor" stroke-width="4"/><path d="M8 11h8M8 11l2-2M8 11l2 2M16 11l-2-2M16 11l-2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Стены</span></button>
+      <button data-tool="select"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Выбор</span></button>
+      <button data-tool="point"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3" fill="currentColor"/><path d="M12 21s-7-6.5-7-11a7 7 0 0114 0c0 4.5-7 11-7 11z" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Точка</span></button>
+      <button data-tool="line"><svg viewBox="0 0 24 24"><path d="M4 18L20 6M4 14v8M20 2v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Размер</span></button>
+      <button data-tool="sketch"><svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Чертить</span></button>
+      <button id="btnList"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Журнал</span></button>
+      <button id="btnAreas"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 15l3-6 3 4 2-2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Площади</span></button>
+      <button id="btnShare"><svg viewBox="0 0 24 24"><path d="M21 3L3 10l7 3 3 7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 13l11-10" stroke="currentColor" stroke-width="2"/></svg><span>Отправить</span></button>
+    </div>
+    <div class="snapHead">Привязки <small>(как в AutoCAD)</small></div>
+    <div class="snaps" id="snaps">
+      <button data-snap="end"><i class="sm sq"></i>Конточка</button>
+      <button data-snap="mid"><i class="sm tri"></i>Середина</button>
+      <button data-snap="perp"><i class="sm perp"></i>Нормаль</button>
+      <button data-snap="near"><i class="sm near"></i>Ближайшая</button>
+      <button data-snap="ortho"><i class="sm orth"></i>Орто</button>
+    </div>
+  </div>
   <div class="subbar">
     <div class="floor">
       <button class="ic" id="floorDown" aria-label="Этаж ниже">−</button>
@@ -53,6 +74,8 @@
       <button id="draftDone" class="primary">Готово</button>
       <button id="draftCancel">✕</button>
     </div>
+    <button class="flt snapT" id="btnSnap" aria-label="Привязка">⌖<small>ПРИВ</small></button>
+    <button class="flt orthoT" id="btnOrtho" aria-label="Орто">⊾<small>ОРТО</small></button>
     <button class="fit" id="btnFit" aria-label="Показать весь блок">
       <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
@@ -78,6 +101,11 @@
       </label>
     </div>
     <div class="dev" id="shDev"></div>
+    <div class="grid2" id="shSlope" hidden>
+      <label class="field"><span>Уклон стены, °</span><input id="shAng" inputmode="decimal" autocomplete="off" placeholder="0"></label>
+      <label class="field"><span>Смещение конца, м</span><input id="shOff" inputmode="decimal" autocomplete="off" placeholder="0,00"></label>
+    </div>
+    <div class="roomInfo" id="shRoom" hidden></div>
     <div class="grid3" id="shFloorRow">
       <label class="field"><span>Этаж</span><input id="shFloor" inputmode="numeric"></label>
       <label class="field"><span>Направление</span>
@@ -101,18 +129,10 @@
 
   <footer class="bottom">
     <form class="entry" id="entryForm" autocomplete="off">
+      <button type="button" class="undo" id="btnUndo" aria-label="Отменить"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <input id="entry" inputmode="decimal" enterkeyhint="done" placeholder="Замер вручную, м — напр. 2,85">
       <button type="submit" class="primary" aria-label="Записать">✓</button>
     </form>
-    <nav class="tools" id="tools">
-      <button data-tool="walls" class="on"><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 5h18" stroke="currentColor" stroke-width="4"/><path d="M8 11h8M8 11l2-2M8 11l2 2M16 11l-2-2M16 11l-2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Стены</span></button>
-      <button data-tool="select"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Выбор</span></button>
-      <button data-tool="point"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3" fill="currentColor"/><path d="M12 21s-7-6.5-7-11a7 7 0 0114 0c0 4.5-7 11-7 11z" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Точка</span></button>
-      <button data-tool="line"><svg viewBox="0 0 24 24"><path d="M4 18L20 6M4 14v8M20 2v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Размер</span></button>
-      <button data-tool="sketch"><svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Чертить</span></button>
-      <button id="btnUndo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Отменить</span></button>
-      <button id="btnList"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Журнал</span></button>
-    </nav>
   </footer>
 </div>
 
@@ -132,12 +152,8 @@
     </div>
     <div class="tableWrap"><table id="listTable"></table></div>
     <div class="stats" id="listStats"></div>
-    <h3>Выгрузка</h3>
-    <div class="row wrap">
-      <button class="btn" id="expDxf">DXF этаж (мм)</button>
-      <button class="btn" id="expDxfAll">DXF все этажи</button>
-      <button class="btn" id="expCsv">Excel CSV</button>
-      <button class="btn" id="expPng">PNG</button>
+    <div class="row wrap" style="margin-top:12px">
+      <button class="btn primary" id="listShare">Сохранить / отправить…</button>
     </div>
   </div>
 </div>
@@ -199,7 +215,44 @@
   </div>
 </div>
 
+<!-- Сохранить / отправить -->
+<div class="modal" id="shareModal" hidden>
+  <div class="panel narrow">
+    <div class="panelHead"><h2>Сохранить или отправить</h2><button class="ic ghost" data-close>✕</button></div>
+    <p class="muted small" id="shareScope"></p>
+    <div class="seg wide" id="shareMode">
+      <button data-mode="share" class="on">Отправить (Telegram…)</button>
+      <button data-mode="save">Сохранить на телефон</button>
+    </div>
+    <div class="shareList">
+      <button class="shareItem" data-kind="pdf"><b>PDF</b><span>Обмерный план, площади комнат, невязки, ведомость стен</span></button>
+      <button class="shareItem" data-kind="pdfall"><b>PDF · все этажи</b><span>Отдельные страницы для каждого обмеренного этажа блока</span></button>
+      <button class="shareItem" data-kind="dxf"><b>DXF для AutoCAD (мм)</b><span>План, обмерный контур, невязки, площади, замеры</span></button>
+      <button class="shareItem" data-kind="dxfall"><b>DXF · все этажи (мм)</b><span>Каждый этаж — на своих слоях (…_ЭТ16)</span></button>
+      <button class="shareItem" data-kind="csv"><b>Excel (CSV)</b><span>Все замеры блока</span></button>
+      <button class="shareItem" data-kind="png"><b>Картинка PNG</b><span>Обмерный план этажа</span></button>
+      <button class="shareItem" data-kind="json"><b>Копия данных</b><span>Резервная копия всех замеров (JSON)</span></button>
+    </div>
+    <p class="muted small">«Отправить» откроет список приложений телефона — выберите Telegram и нужный чат («Избранное» — чтобы сохранить себе).</p>
+  </div>
+</div>
+
+<!-- Площади -->
+<div class="modal" id="areasModal" hidden>
+  <div class="panel">
+    <div class="panelHead"><h2>Площади и невязки</h2><button class="ic ghost" data-close>✕</button></div>
+    <p class="muted small" id="areasScope"></p>
+    <div class="tableWrap"><table id="areasTable"></table></div>
+    <div class="stats" id="areasStats"></div>
+    <div class="row wrap" style="margin-top:12px">
+      <button class="btn primary" id="areasPdf">Отправить PDF</button>
+      <button class="btn" id="areasPdfSave">Сохранить PDF</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden></div>
+<div class="readyBar" id="readyBar" hidden><span>Файл готов: <b id="readyName"></b></span><button class="btn primary" id="readyGo">Отправить</button><button class="ic ghost" onclick="this.parentNode.hidden=true">✕</button></div>
 <div class="busy" id="busy" hidden><div class="spin"></div><span id="busyText">Загрузка…</span></div>
 
 <script type="module" src="js/app.js"></script>

@@ -103,9 +103,9 @@ button { cursor: pointer; border: 0; background: none; }
   background: var(--card); color: var(--ink); box-shadow: var(--shadow); display: grid; place-items: center;
 }
 .fit { bottom: 56px; }
-.measure { bottom: 112px; width: 60px; height: 60px; right: 6px; background: var(--accent); color: #fff; }
+.measure { bottom: 212px; width: 60px; height: 60px; right: 6px; background: var(--accent); color: #fff; }
 .draftbar {
-  position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
+  position: absolute; left: 50%; top: 62px; z-index: 3; transform: translateX(-50%);
   display: flex; gap: 6px; background: var(--card); padding: 6px; border-radius: 14px; box-shadow: var(--shadow);
 }
 .draftbar button { height: 36px; padding: 0 12px; border-radius: 10px; background: var(--bg); font-weight: 600; }
@@ -121,13 +121,61 @@ button { cursor: pointer; border: 0; background: none; }
 .entry input:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .entry button { width: 54px; height: 44px; border-radius: 12px; font-size: 22px; font-weight: 700; }
 .primary { background: var(--accent); color: #fff; }
-.tools { display: flex; justify-content: space-around; padding: 2px 4px 6px; }
-.tools button {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; border-radius: 12px;
-  color: var(--ink2); font-size: 11px; font-weight: 600;
+/* кнопка инструментов сверху и выпадающая панель */
+.toolBtn {
+  display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border-radius: 10px;
+  background: var(--accent2); color: #fff; font-size: 13px; white-space: nowrap;
 }
-.tools svg { width: 24px; height: 24px; }
-.tools button.on { color: var(--accent2); background: color-mix(in srgb, var(--accent2) 12%, transparent); }
+.toolBtn svg { width: 18px; height: 18px; display: block; }
+.toolBtn i { font-style: normal; opacity: .8; font-size: 11px; }
+.toolsPop {
+  position: absolute; z-index: 40; right: 8px; top: calc(56px + var(--safeT)); width: min(360px, calc(100vw - 16px));
+  background: var(--card); border-radius: 18px; box-shadow: 0 16px 50px rgba(8,14,28,.35); padding: 10px; animation: drop .15s ease-out;
+}
+@keyframes drop { from { transform: translateY(-8px); opacity: 0; } }
+.tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.tools button {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0 8px; border-radius: 12px;
+  color: var(--ink); font-size: 11px; font-weight: 600;
+}
+.tools button:active { background: var(--bg); }
+.tools svg { width: 26px; height: 26px; }
+.tools button.on { color: #fff; background: var(--accent2); }
+.snapHead { margin: 10px 4px 6px; font-size: 12px; font-weight: 700; color: var(--ink2); text-transform: uppercase; letter-spacing: .5px; }
+.snapHead small { text-transform: none; font-weight: 500; letter-spacing: 0; }
+.snaps { display: flex; flex-wrap: wrap; gap: 6px; }
+.snaps button {
+  display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; border-radius: 10px;
+  background: var(--bg); color: var(--ink2); font-size: 13px; font-weight: 600; border: 1.5px solid transparent;
+}
+.snaps button.on { color: var(--accent2); border-color: var(--accent2); background: color-mix(in srgb, var(--accent2) 10%, transparent); }
+.sm { width: 12px; height: 12px; display: inline-block; border: 2px solid currentColor; }
+.sm.tri { border: 0; width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 12px solid currentColor; }
+.sm.perp { border-width: 0 0 2px 2px; }
+.sm.near { border-radius: 2px; transform: rotate(45deg) scale(.8); }
+.sm.orth { border-width: 0 0 2px 2px; height: 12px; width: 12px; position: relative; }
+.flt {
+  position: absolute; right: 12px; width: 46px; height: 46px; border-radius: 14px; background: var(--card); color: var(--ink2);
+  box-shadow: var(--shadow); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 20px; line-height: 1;
+}
+.flt small { font-size: 8px; font-weight: 800; letter-spacing: .3px; margin-top: 2px; }
+.flt.on { background: var(--accent2); color: #fff; }
+.snapT { bottom: 160px; }
+.orthoT { bottom: 108px; }
+.undo { width: 46px; height: 44px; border-radius: 12px; background: var(--bg); color: var(--ink); display: grid; place-items: center; border: 1px solid var(--line); }
+.seg.wide { width: 100%; margin: 8px 0 12px; }
+.seg.wide button { flex: 1; }
+.shareList { display: flex; flex-direction: column; gap: 8px; }
+.shareItem {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 12px 14px; border-radius: 14px;
+  background: var(--bg); border: 1px solid var(--line);
+}
+.shareItem b { font-size: 16px; }
+.shareItem span { font-size: 12px; color: var(--ink2); }
+.shareItem:active { background: color-mix(in srgb, var(--accent2) 12%, var(--bg)); }
+.roomInfo { font-size: 13px; background: var(--bg); border-radius: 12px; padding: 8px 12px; line-height: 1.5; }
+.roomInfo b { font-variant-numeric: tabular-nums; }
+.roomInfo .bad { color: var(--bad); } .roomInfo .ok { color: var(--ok); } .roomInfo .warn { color: var(--warn); }
 
 /* карточка точки */
 .sheet {
@@ -224,3 +272,7 @@ tr.clk:active { background: var(--bg); }
 .tools button { font-size: 10px; }
 
 .panel .row.wrap .btn { flex: 1 1 calc(50% - 8px); }
+.readyBar { position: fixed; left: 10px; right: 10px; bottom: calc(80px + var(--safeB)); z-index: 65; display: flex; gap: 8px; align-items: center;
+  background: var(--card); border-radius: 14px; padding: 8px 8px 8px 14px; box-shadow: var(--shadow); font-size: 13px; }
+.readyBar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.readyBar .btn { flex: 0 0 auto; }

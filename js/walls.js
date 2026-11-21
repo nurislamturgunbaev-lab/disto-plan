@@ -88,3 +88,54 @@ export function buildWalls(polys, unitM, opts = {}) {
   });
   return { rooms, segs: all, byKey };
 }
+
+/**
+ * Обмерный контур комнаты: стены откладываются по порядку с измеренной длиной
+ * и направлением по чертежу + уклон (it.ang, градусы, + против часовой).
+ * Неизмеренные стены берутся по чертежу. Если контур не замыкается — возвращается невязка.
+ * getIt(seg) -> {value (м), ang} | undefined
+ */
+export function asBuilt(room, getIt, unitM) {
+  const segs = room.segs;
+  const pts = [];
+  let x = segs[0].ax, y = segs[0].ay;
+  pts.push(x, y);
+  const segPts = [];
+  let measured = 0;
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    if (i > 0) {
+      const p = segs[i - 1];
+      const dx = s.ax - p.bx, dy = s.ay - p.by;
+      if (Math.abs(dx) + Math.abs(dy) > 1e-9) { x += dx; y += dy; pts.push(x, y); }
+    }
+    const it = getIt(s);
+    const has = it && it.value != null;
+    if (has) measured++;
+    const L = has ? it.value / unitM : Math.hypot(s.bx - s.ax, s.by - s.ay);
+    const a = Math.atan2(s.by - s.ay, s.bx - s.ax) + ((it?.ang || 0) * Math.PI) / 180;
+    const sx = x, sy = y;
+    x += L * Math.cos(a); y += L * Math.sin(a);
+    pts.push(x, y);
+    segPts.push({ seg: s, sx, sy, ex: x, ey: y, has });
+  }
+  let gap = null, gapFrom = null;
+  if (room.closed) {
+    const last = segs[segs.length - 1];
+    const dx = segs[0].ax - last.bx, dy = segs[0].ay - last.by;
+    if (Math.abs(dx) + Math.abs(dy) > 1e-9) { x += dx; y += dy; pts.push(x, y); }
+    gapFrom = [x, y];
+    gap = Math.hypot(pts[0] - x, pts[1] - y) * unitM;
+  }
+  let A = 0;
+  const n = pts.length / 2;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    A += pts[i * 2] * pts[j * 2 + 1] - pts[j * 2] * pts[i * 2 + 1];
+  }
+  return {
+    pts, segPts, gap, gapFrom, gapTo: [pts[0], pts[1]],
+    area: room.closed ? (Math.abs(A) / 2) * unitM * unitM : null,
+    measured, total: segs.length,
+  };
+}
