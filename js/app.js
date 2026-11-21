@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.1.2';
+const VERSION = '2.1.3';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -2489,35 +2489,56 @@ function currentHead() {
   return null;
 }
 /** Поворот «змейкой»: текущая линия смотрит вверх, её конец стоит в центре экрана, план движется вокруг; кнопки не крутятся */
+/** Текущая линия (мир): та, что меряем, или последняя начерченная */
+function currentLine() {
+  if (S.tool === 'sketch') {
+    const sk = skmItem();
+    if (sk) { const n = sk.pts.length / 2, k = S.skm.i, j = (k + 1) % n; return { a: { x: sk.pts[k * 2], y: sk.pts[k * 2 + 1] }, b: { x: sk.pts[j * 2], y: sk.pts[j * 2 + 1] } }; }
+    const it = skItem();
+    if (S.draft && it?.dirs?.length) { const k = it.dirs.length - 1; return { a: { x: it.pts[k * 2], y: it.pts[k * 2 + 1] }, b: { x: it.pts[k * 2 + 2], y: it.pts[k * 2 + 3] } }; }
+    return null;
+  }
+  if (S.tool === 'walls' && S.selSeg) { const sg = wallsOf().byKey.get(S.selSeg); return sg ? { a: { x: sg.ax, y: sg.ay }, b: { x: sg.bx, y: sg.by } } : null; }
+  return null;
+}
+/** Вид: «змейка» (поворот) и, в полноэкранном режиме, масштаб — текущая линия всегда одного размера на экране */
 function stepRotation() {
   const v = V();
   if (gesture && gesture.type === 'turn') return false;
-  let target = 0, head = null;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  let target = 0, head = null, tS = v.s, ax = W / 2, ay = H * 0.55;
   if (S.settings.rotate) {
-    const d = currentDir(); if (d == null) return false;
-    target = ((d - 90) * Math.PI) / 180; head = currentHead();
+    const d = currentDir(); if (d == null && !focusMode) return false;
+    if (d != null) { target = ((d - 90) * Math.PI) / 180; head = currentHead(); }
+  } else target = v.rot || 0; // без «змейки» поворот не трогаем
+  const ln = focusMode ? currentLine() : null;
+  if (ln) {
+    const len = Math.hypot(ln.b.x - ln.a.x, ln.b.y - ln.a.y);
+    if (len > 1e-9) tS = Math.max(0.02, Math.min(1e4, (Math.min(W, H) * 0.42) / len)); // линия ≈ 42% экрана
+    if (!head) { head = { x: (ln.a.x + ln.b.x) / 2, y: (ln.a.y + ln.b.y) / 2 }; ax = W / 2; ay = H / 2; }
   }
-  let diff = target - (v.rot || 0);
-  while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
-  const cx = cv.clientWidth / 2, cy = cv.clientHeight * 0.55;
-  let moving = Math.abs(diff) >= 0.002;
-  if (head) {
-    const key = head.x.toFixed(3) + ',' + head.y.toFixed(3) + ',' + target.toFixed(3);
-    if (v.snakeDone === key) return false; // уже на месте — можно свободно двигать план пальцем
-    const h = w2s(head.x, head.y, v);
-    const dx = cx - h.x, dy = cy - h.y;
-    if (Math.hypot(dx, dy) > 0.5) moving = true;
-    if (!moving) { v.snakeDone = key; return false; }
-    v.rot = (v.rot || 0) + (Math.abs(diff) < 0.002 ? diff : diff * 0.22);
-    placeWorldAt(v, head.x, head.y, h.x + dx * 0.22, h.y + dy * 0.22);
-    if (Math.hypot(dx, dy) <= 0.5 && Math.abs(diff) < 0.002) { placeWorldAt(v, head.x, head.y, cx, cy); v.snakeDone = key; return false; }
+  if (!S.settings.rotate && !ln) {
+    // поворот выключен — плавно вернуть север вверх
+    let diff = -(v.rot || 0);
+    while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
+    if (Math.abs(diff) < 0.002) { if (v.rot) v.rot = 0; return false; }
+    const c0 = screenToWorld(W / 2, H / 2, v);
+    v.rot = (v.rot || 0) + diff * 0.22; placeWorldAt(v, c0.x, c0.y, W / 2, H / 2);
     return true;
   }
-  if (!moving) { if (v.rot && Math.abs(v.rot) < 0.002) v.rot = 0; return false; }
-  const ccx = cv.clientWidth / 2, ccy = cv.clientHeight / 2;
-  const c0 = screenToWorld(ccx, ccy, v);
+  if (!head) return false;
+  let diff = target - (v.rot || 0);
+  while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
+  const key = [head.x, head.y, target, tS, ax, ay].map((q) => q.toFixed(3)).join(',');
+  if (v.snakeDone === key) return false; // уже на месте — можно свободно двигать и масштабировать пальцами
+  const h = w2s(head.x, head.y, v);
+  const dx = ax - h.x, dy = ay - h.y, ks = tS / v.s;
+  if (Math.hypot(dx, dy) <= 0.5 && Math.abs(diff) < 0.002 && Math.abs(ks - 1) < 0.003) {
+    v.rot = target; v.s = tS; placeWorldAt(v, head.x, head.y, ax, ay); v.snakeDone = key; return false;
+  }
   v.rot = (v.rot || 0) + diff * 0.22;
-  placeWorldAt(v, c0.x, c0.y, ccx, ccy);
+  v.s *= Math.pow(ks, 0.22);
+  placeWorldAt(v, head.x, head.y, h.x + dx * 0.22, h.y + dy * 0.22);
   return true;
 }
 function syncCompass() {
