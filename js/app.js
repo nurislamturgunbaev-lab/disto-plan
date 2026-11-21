@@ -5,7 +5,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne } from './zip.js';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
 
@@ -14,7 +14,8 @@ const fmt = (m) => (m == null || !isFinite(m) ? '—' : m.toFixed(2).replace('.'
 const fmtSigned = (m) => (m > 0 ? '+' : m < 0 ? '−' : '±') + Math.abs(m).toFixed(2).replace('.', ',');
 function parseNum(s) {
   if (s == null) return null;
-  const m = String(s).replace(/\s/g, '').replace(',', '.').match(/-?\d+(\.\d+)?/);
+  // на русской раскладке точка/запятая клавиатуры приходят как «ю» / «б»
+  const m = String(s).replace(/\s/g, '').replace(/[юЮбБ,]/g, '.').match(/-?\d+(\.\d+)?/);
   return m ? parseFloat(m[0]) : null;
 }
 const UNIT_M = { mm: 0.001, cm: 0.01, m: 1 };
@@ -65,6 +66,8 @@ const S = {
   tool: 'walls',
   selSeg: null, // ключ выбранной стены
   session: false,
+  sketchDir: null,
+  sheetFull: false,
   openType: 'door',
   items: [],
   selId: null,
@@ -162,6 +165,12 @@ function onMeasure(meters, src) {
   let target = null;
   const sel = S.items.find((i) => i.id === S.selId);
   if (S.armedId) target = S.items.find((i) => i.id === S.armedId);
+  if (S.tool === 'sketch') {
+    if (!S.draft || !S.draft.pts.length) { toast(`${fmt(meters)} м — сначала нажмите на план (начало линии)`); return; }
+    if (!S.sketchDir) { toast(`${fmt(meters)} м — выберите направление стрелкой слева`); return; }
+    sketchAppend(meters, src);
+    return;
+  }
   if (!target && S.selSeg && !sel) { recordSeg(S.selSeg, meters, src); return; }
   if (!target && !sel && S.tool === 'walls') { const k = firstOpenSeg(); if (k) { S.selSeg = k; recordSeg(k, meters, src); return; } }
   if (!target && sel && sel.kind !== 'sketch' && sel.value == null) target = sel;
@@ -318,7 +327,7 @@ function niceStep(x) {
 }
 
 function devClass(it) {
-  if (it.value == null || it.design == null) return null;
+  if (it.merged || it.value == null || it.design == null) return null;
   const d = Math.abs(it.value - it.design);
   return d <= 0.01 ? 'ok' : d <= 0.03 ? 'warn' : 'bad';
 }
@@ -359,6 +368,7 @@ function drawItems(c, v, pal, items, opts = {}) {
       c.lineWidth = sel ? 3.5 : 2.5;
       c.setLineDash([]);
       c.beginPath(); path(c, it.pts, v); if (it.closed) c.closePath(); c.stroke();
+      sketchLabels(c, it.pts, v, pal, sel ? pal.accent2 : pal.accent);
       if (sel) for (let i = 0; i < it.pts.length; i += 2) handle(c, w2s(it.pts[i], it.pts[i + 1], v), pal);
     } else if (it.kind === 'line') {
       const a = w2s(it.x, it.y, v), b = w2s(it.x2, it.y2, v);
@@ -417,6 +427,17 @@ function drawItems(c, v, pal, items, opts = {}) {
   }
   c.globalAlpha = 1;
 }
+function sketchLabels(c, pts, v, pal, col) {
+  for (let i = 0; i + 3 < pts.length; i += 2) {
+    const a = w2s(pts[i], pts[i + 1], v), e = w2s(pts[i + 2], pts[i + 3], v);
+    const Lp = Math.hypot(e.x - a.x, e.y - a.y);
+    if (Lp < 14) continue;
+    let rot = Math.atan2(e.y - a.y, e.x - a.x);
+    if (rot > Math.PI / 2) rot -= Math.PI; if (rot < -Math.PI / 2) rot += Math.PI;
+    const L = Math.hypot(pts[i + 2] - pts[i], pts[i + 3] - pts[i + 1]) * unitM();
+    pill(c, (a.x + e.x) / 2 - Math.sin(rot) * 14, (a.y + e.y) / 2 + Math.cos(rot) * -14, fmt(L), col, '#fff', { rot, size: Lp > 34 ? 11 : 9, shadow: false });
+  }
+}
 function measurePill(c, text) {
   c.font = '800 13px system-ui, -apple-system, sans-serif';
   return { w: c.measureText(text).width + 14 };
@@ -444,6 +465,7 @@ function draw() {
     ctx.strokeStyle = pal.accent2; ctx.lineWidth = 2.5; ctx.setLineDash([8, 6]);
     ctx.beginPath(); path(ctx, d.pts.concat(d.hover ? [d.hover.x, d.hover.y] : []), v); ctx.stroke(); ctx.setLineDash([]);
     for (let i = 0; i < d.pts.length; i += 2) handle(ctx, w2s(d.pts[i], d.pts[i + 1], v), pal);
+    if (d.kind === 'sketch' && d.pts.length >= 4) sketchLabels(ctx, d.pts, v, pal, pal.accent2);
     if (d.hover && d.pts.length >= 2) {
       const n = d.pts.length;
       const dx = d.hover.x - d.pts[n - 2], dy = d.hover.y - d.pts[n - 1];
@@ -458,6 +480,7 @@ function draw() {
   scaleBar(ctx, v, pal);
   if (S.selSeg || curItems().some((i) => i.value == null && i.kind === 'point')) requestDraw();
   updateProgress();
+  syncDpad();
 }
 let raf = 0;
 function requestDraw() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
@@ -781,9 +804,37 @@ function tap(p) {
       if (Math.hypot(f.x - p.x, f.y - p.y) < 18) { finishSketch(true); return; }
     }
     d.pts.push(w.x, w.y);
+    if (d.itemId) { const it = S.items.find((i) => i.id === d.itemId); if (it) { it.pts = d.pts.slice(); save(); } }
     hint('Ставьте точки линии. «Готово» — завершить, нажатие на первую точку — замкнуть');
   }
   updateDraftBar();
+}
+/** Эскиз стрелками: добавить отрезок в выбранном направлении и сразу сохранить */
+function sketchAppend(meters, src) {
+  const d = S.draft;
+  const n = d.pts.length;
+  const a = (DIR_DEG[S.sketchDir] * Math.PI) / 180, L = meters / unitM();
+  d.pts.push(d.pts[n - 2] + Math.cos(a) * L, d.pts[n - 1] + Math.sin(a) * L);
+  d.lens = d.lens || []; d.lens.push(meters);
+  let it = d.itemId && S.items.find((i) => i.id === d.itemId);
+  if (!it) {
+    pushUndo();
+    it = { id: uid(), kind: 'sketch', pts: [], lens: [], block: S.block, floor: S.floor, t: Date.now() };
+    S.items.push(it); d.itemId = it.id;
+  }
+  it.pts = d.pts.slice(); it.lens = d.lens.slice();
+  save(); feedback();
+  toast(`${fmt(meters)} м ${{ r: '→', u: '↑', l: '←', d: '↓' }[S.sketchDir]}`);
+  draw();
+}
+function sketchUndo() {
+  const d = S.draft;
+  if (!d) return;
+  d.pts.splice(-2); if (d.lens) d.lens.pop();
+  const it = d.itemId && S.items.find((i) => i.id === d.itemId);
+  if (it) { if (d.pts.length >= 4) { it.pts = d.pts.slice(); it.lens = (d.lens || []).slice(); } else { S.items = S.items.filter((i) => i !== it); d.itemId = null; } save(); }
+  if (!d.pts.length) S.draft = null;
+  updateDraftBar(); draw();
 }
 function draftFrom() {
   const d = S.draft;
@@ -791,7 +842,10 @@ function draftFrom() {
 }
 function finishSketch(closed = false) {
   const d = S.draft; S.draft = null;
-  if (d && d.kind === 'sketch' && d.pts.length >= 4) {
+  if (d && d.itemId) {
+    const it = S.items.find((i) => i.id === d.itemId);
+    if (it) { it.pts = d.pts.slice(); it.closed = closed; save(); select(it.id); }
+  } else if (d && d.kind === 'sketch' && d.pts.length >= 4) {
     const it = addItem({ kind: 'sketch', pts: d.pts, closed });
     select(it.id);
   }
@@ -812,6 +866,7 @@ function select(id) {
 function refreshSheet() {
   const sh = $('sheet');
   $('shNav').hidden = !S.selSeg;
+  if (!S.selSeg) { $('shNav2').hidden = true; $('sheet').classList.remove('compact'); $('shSub').hidden = false; $('shDesignWrap').hidden = false; }
   if (S.selSeg) $('shOpen').hidden = true;
   if (S.selSeg) { sh.hidden = false; refreshSegSheet(); return; }
   const it = S.items.find((i) => i.id === S.selId);
@@ -889,6 +944,20 @@ function bindSheet() {
   $('shOW').addEventListener('input', onEdit((it, v) => { const n = parseNum(v); if (n > 0.2 && n < 10) it.w = n; }));
   $('shOW').addEventListener('focus', () => { editSnap = false; });
   $('shOFlip').onclick = () => { const it = cur(); if (it) { pushUndo(); it.flip = !it.flip; save(); draw(); } };
+  $('shMerge').onclick = async () => {
+    if (!S.selSeg) return;
+    const J = jogInfo(S.selSeg);
+    const txt = J?.parallel ? `Удалить поворот? Выступ ${fmt(J.sg.len)} м уберётся, соседние стены станут одной ровной стеной.`
+      : `Удалить эту стену (${fmt(J.sg.len)} м) как лишний поворот?`;
+    if (!(await ask(txt, 'Удалить поворот'))) return;
+    mergeTurn(S.selSeg); gotoSeg(1, true);
+  };
+  $('shMore').onclick = () => { S.sheetFull = !S.sheetFull; refreshSheet(); syncDpad(); };
+  for (const b of $('dpad').querySelectorAll('[data-d]')) b.onclick = () => onDpad(b.dataset.d);
+  $('dpadC').onclick = () => {
+    if (S.tool === 'sketch' && S.draft) { sketchUndo(); return; }
+    doUndo();
+  };
   $('shPrev').onclick = () => gotoSeg(-1);
   $('shClear').onclick = () => { const it = segItem(S.selSeg); if (it) { removeItem(it.id); toast('Замер и уклон стены очищены'); } };
   $('shNext').onclick = () => gotoSeg(1);
@@ -929,7 +998,7 @@ function segItem(key, create, block = S.block, floor = S.floor) {
   }
   return it;
 }
-const isDone = (it) => !!it && it.value != null && !it.copied;
+const isDone = (it) => !!it && (it.merged || (it.value != null && !it.copied));
 function segInfo(it) { return wallsOf(it.block).byKey.get(it.key); }
 function segLabel(it) { const sg = segInfo(it); return sg ? `К${sg.room}·${sg.wall}` : `К${it.room ?? '?'}·${it.wall ?? '?'}`; }
 function floorSegMap() {
@@ -952,7 +1021,7 @@ function recordSeg(key, meters, src) {
   toast(`Комната ${sg?.room} · стена ${sg?.wall}: ${fmt(meters)} м${d}`);
   feedback();
   save();
-  if (S.settings.autoNext) gotoSeg(1, true);
+  if (S.settings.autoNext) { gotoSeg(1, true); maybeAskTurn(); }
   else { refreshSheet(); draw(); }
 }
 function selectSeg(key, noZoom) {
@@ -1110,6 +1179,7 @@ function drawWalls(c, b, v, pal, opts = {}) {
     for (const sp of ab.segPts) {
       if (!sp.has) continue;
       const it = m.get(sp.seg.key);
+      if (it.merged) continue;
       const cl = it.copied ? null : devClass(it); const col = it.copied ? '#9aa3b2' : cl ? pal[cl] : pal.accent;
       const a = w2s(sp.sx, sp.sy, v), e = w2s(sp.ex, sp.ey, v);
       c.strokeStyle = col; c.lineWidth = 3.5;
@@ -1175,7 +1245,12 @@ function refreshSegSheet() {
   const sg = W.byKey.get(S.selSeg);
   if (!sg) { S.selSeg = null; $('sheet').hidden = true; return; }
   const it = segItem(S.selSeg);
-  $('shTitle').textContent = `Комната ${sg.room} · стена ${sg.wall} из ${sg.of}`;
+  const compact = S.session && !S.sheetFull;
+  $('sheet').classList.toggle('compact', compact);
+  $('shNav2').hidden = false;
+  $('shMore').textContent = compact ? '⋯ Подробнее' : '⋯ Короче';
+  $('shMore').hidden = !S.session;
+  $('shTitle').textContent = `Комната ${sg.room} · стена ${sg.wall} из ${sg.of}` + (compact ? ` · черт. ${fmt(sg.len)}` : '');
   $('shSub').textContent = `Блок ${S.block} · этаж ${S.floor} · по чертежу ${fmt(sg.len)} м` +
     (it?.mt ? ' · ' + new Date(it.mt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + (it.src === 'manual' ? ' · вручную' : ' · DISTO') : '');
   for (const el of document.querySelectorAll('#sheet .grid2, #shDev')) el.hidden = false;
@@ -1196,10 +1271,18 @@ function refreshSegSheet() {
   dv.className = 'dev ' + (cls || '');
   dv.textContent = it?.copied ? `Значение взято с ${it.copied.from} этажа — перемерьте стену` : cls ? `Отклонение ${fmtSigned(it.value - it.design)} м от чертежа` : 'Измерьте DISTO или введите значение. Кривая стена — потяните ⟳ на конце';
   if (it?.copied) dv.className = 'dev warn';
+  if (it?.merged) { dv.className = 'dev'; dv.textContent = 'Поворот удалён — стена ровная. «✕» — вернуть.'; }
   const room = W.rooms.find((r) => r.no === sg.room);
   const ab = roomAsBuilt(room);
   const ri = $('shRoom');
   ri.hidden = !ab.measured;
+  if (compact) {
+    // во время замера — только метры
+    $('shSub').hidden = true; $('shDesignWrap').hidden = true; $('shSlope').hidden = true; ri.hidden = true; $('shNoteWrap').hidden = true;
+    if (!it?.copied && !it?.merged) dv.hidden = true;
+    return;
+  }
+  $('shSub').hidden = false; $('shDesignWrap').hidden = false; dv.hidden = false;
   if (ab.measured) {
     const gc = gapClass(ab.gap);
     ri.innerHTML = `Комната ${room.no}: стен <b>${ab.measured}/${ab.total}</b> · S черт. <b>${fmt(room.area)}</b> м² · S обмер <b>${fmt(ab.area)}</b> м²` +
@@ -1339,6 +1422,91 @@ function pickOpen(sx, sy) {
   }
   return null;
 }
+/* ---------- пульт направлений (←↑→↓) и удаление поворотов ---------- */
+const DIR_DEG = { r: 0, u: 90, l: 180, d: 270 };
+function normDeg(a) { while (a > 180) a -= 360; while (a <= -180) a += 360; return a; }
+function nearestDir(deg) {
+  let best = 'r', bd = 999;
+  for (const [k, v] of Object.entries(DIR_DEG)) { const d = Math.abs(normDeg(deg - v)); if (d < bd) { bd = d; best = k; } }
+  return best;
+}
+function curWallDir() {
+  const sg = wallsOf().byKey.get(S.selSeg);
+  if (!sg) return null;
+  const it = segItem(S.selSeg);
+  return nearestDir((Math.atan2(sg.by - sg.ay, sg.bx - sg.ax) * 180) / Math.PI + (it?.ang || 0));
+}
+function syncDpad() {
+  const dp = $('dpad');
+  const show = (S.tool === 'walls' && !!S.selSeg) || S.tool === 'sketch';
+  dp.hidden = !show;
+  if (!show) return;
+  const sh = $('sheet');
+  dp.style.bottom = (sh.hidden ? 14 : sh.offsetHeight + 10) + 'px';
+  const on = S.tool === 'walls' ? curWallDir() : S.sketchDir;
+  for (const b of dp.querySelectorAll('[data-d]')) b.classList.toggle('on', b.dataset.d === on);
+}
+function onDpad(d) {
+  if (S.tool === 'walls' && S.selSeg) {
+    const sg = wallsOf().byKey.get(S.selSeg);
+    pushUndo();
+    const it = segItem(S.selSeg, true);
+    const base = (Math.atan2(sg.by - sg.ay, sg.bx - sg.ax) * 180) / Math.PI;
+    let a = Math.round(normDeg(DIR_DEG[d] - base) * 10) / 10;
+    if (Math.abs(a) < 0.05) a = 0;
+    it.ang = a;
+    save(); refreshSheet(); draw();
+  } else if (S.tool === 'sketch') {
+    S.sketchDir = d;
+    if (!S.draft) hint('Нажмите на план — начало линии, затем измерьте DISTO');
+    else hint('Направление выбрано — измерьте DISTO');
+  }
+  syncDpad();
+}
+/** Стена-«выступ»: короткая, а стены по бокам параллельны (на самом деле стена ровная) */
+function jogInfo(key) {
+  const W = wallsOf();
+  const sg = W.byKey.get(key);
+  if (!sg) return null;
+  const room = W.rooms.find((r) => r.no === sg.room);
+  const i = room.segs.indexOf(sg), n = room.segs.length;
+  const prev = room.closed || i > 0 ? room.segs[(i - 1 + n) % n] : null;
+  const next = room.closed || i < n - 1 ? room.segs[(i + 1) % n] : null;
+  let parallel = false;
+  if (prev && next && prev !== next) {
+    const u = (s) => { const L = Math.hypot(s.bx - s.ax, s.by - s.ay); return [(s.bx - s.ax) / L, (s.by - s.ay) / L]; };
+    const [a, b] = [u(prev), u(next)];
+    parallel = a[0] * b[0] + a[1] * b[1] > 0.985;
+  }
+  return { sg, prev, next, parallel, isJog: sg.len < 0.6 && parallel };
+}
+function mergeTurn(key) {
+  const J = jogInfo(key);
+  if (!J) return;
+  pushUndo();
+  const mark = (k) => { const it = segItem(k, true); it.merged = true; it.value = 0; delete it.copied; it.mt = Date.now(); };
+  mark(key);
+  // соседняя стена «съедается» только если её ещё не мерили (иначе замер сохраняется)
+  if (J.parallel && J.next && !isDone(segItem(J.next.key)) && J.next.key !== key) {
+    mark(J.next.key);
+    const p = segItem(J.prev.key, true);
+    if (!p.designManual) p.design = J.prev.len + J.next.len;
+  }
+  save();
+  toast('Поворот удалён — стена считается ровной');
+}
+let askingTurn = false;
+/** Во время замера: если следующая стена — короткий выступ, спросить, удалить ли поворот */
+function maybeAskTurn() {
+  if (!S.session || askingTurn || !S.selSeg) return;
+  const J = jogInfo(S.selSeg);
+  if (!J?.isJog || isDone(segItem(S.selSeg))) return;
+  askingTurn = true;
+  ask(`Выступ ${fmt(J.sg.len)} м (комната ${J.sg.room}, стена ${J.sg.wall}).\nЕсли здесь стена ровная — удалить поворот?`, 'Удалить поворот').then((yes) => {
+    askingTurn = false;
+    if (yes) { mergeTurn(S.selSeg); gotoSeg(1, true); }
+  });
+}
 /* ---------- верхняя панель ---------- */
 function renderBlocks() {
   const el = $('blocks');
@@ -1438,6 +1606,7 @@ function setTool(t) {
   S.tool = t; S.draft = null; updateDraftBar(); if (t !== 'select') { S.selSeg = null; select(null); }
   syncToolUI();
   $('openBar').hidden = t !== 'open';
+  S.sheetFull = false;
   if (t !== 'walls') S.session = false;
   if (t === 'walls' && !S.selSeg) gotoSeg(1, true, true);
   hint({
@@ -1446,7 +1615,7 @@ function setTool(t) {
     select: '',
     point: 'Нажмите на план, где стоите с DISTO — появится точка замера',
     line: 'Укажите первую точку размера (привязка к углам)',
-    sketch: 'Чертите: нажимайте точки линии',
+    sketch: 'Нажмите на план — начало линии. Дальше: стрелка слева + замер DISTO',
   }[t]);
   draw();
 }
@@ -1618,7 +1787,7 @@ function buildDxf(allFloors) {
   const LY = {
     plan: w.layer('ПЛАН', 7), asb: w.layer('ПЛАН_ОБМЕР', 7), col: w.layer('ПЛАН_КОЛОННЫ', 7), src: w.layer('ИСХОДНЫЙ_ЧЕРТЕЖ', 8),
     open: w.layer('ПРОЁМЫ', 7), dim: w.layer('РАЗМЕРЫ', 7), dimg: w.layer('РАЗМЕРЫ_НЕ_ИЗМЕРЕНО', 8), room: w.layer('КОМНАТЫ', 7),
-    gap: w.layer('НЕВЯЗКА', 1), stamp: w.layer('ШТАМП', 7), sig: w.layer('ПОДПИСЬ', 5),
+    gap: w.layer('НЕВЯЗКА', 1), stamp: w.layer('ШТАМП', 7),
   };
   const floors = allFloors ? floorsWithData() : [S.floor];
   if (!floors.length) floors.push(S.floor);
@@ -1672,16 +1841,7 @@ function buildDxf(allFloors) {
     w.text(LY.stamp, sx, sy - 1300, 230, 'Планды түзгөн / План составил:');
     const lx = sx + 5200;
     w.line(LY.stamp, lx, sy - 1400, lx + 3500, sy - 1400);
-    w.text(LY.stamp, lx + 3800, sy - 1300, 230, S.settings.author || '________________');
-    const sig = S.settings.signature;
-    if (sig?.strokes?.length) {
-      const kk = Math.min(3200 / sig.w, 1100 / sig.h);
-      for (const st of sig.strokes) {
-        const pts = [];
-        for (let i = 0; i < st.length; i += 2) pts.push(lx + 150 + st[i] * kk, sy - 1450 + (sig.h - st[i + 1]) * kk);
-        if (pts.length >= 4) w.poly(LY.sig, pts, false);
-      }
-    }
+    w.line(LY.stamp, lx + 3800, sy - 1400, lx + 7300, sy - 1400); // ФИО — от руки
     // точки и размеры лазером (вертикальные замеры)
     for (const i of S.items.filter((q) => q.block === S.block && q.floor === fl)) {
       if (i.kind === 'line') {
@@ -1741,23 +1901,20 @@ function floorModel(floor, block = S.block) {
       let ax = s.ax, ay = s.ay, bx = s.bx, by = s.by;
       if (ab) { const sp = ab.segPts.find((q2) => q2.seg.key === s.key); ax = sp.sx; ay = sp.sy; bx = sp.ex; by = sp.ey; }
       const measured = it?.value != null;
+      if (it?.merged) continue;
       dims.push({ ax, ay, bx, by, nx: s.nx, ny: s.ny, val: measured ? it.value : s.len, measured, copied: !!it?.copied });
     }
     rooms.push({ no: room.no, cx: room.cx, cy: room.cy, area: ab?.area ?? room.area, areaDesign: room.area, measured: !!ab, closed: room.closed, ab });
   });
-  return { b, P, contours, dims, rooms };
-}
-function drawSignature(c, sig, x, y, w, h, color = '#1d3fbf') {
-  if (!sig?.strokes?.length) return;
-  const k = Math.min(w / sig.w, h / sig.h);
-  const ox = x + (w - sig.w * k) / 2, oy = y + (h - sig.h * k) / 2;
-  c.save(); c.strokeStyle = color; c.lineWidth = Math.max(1.5, k * 0.006); c.lineCap = 'round'; c.lineJoin = 'round';
-  for (const st of sig.strokes) {
-    c.beginPath();
-    for (let i = 0; i < st.length; i += 2) { const px = ox + st[i] * k, py = oy + st[i + 1] * k; i ? c.lineTo(px, py) : c.moveTo(px, py); }
-    c.stroke();
+  for (const it of S.items.filter((i) => i.kind === 'sketch' && i.block === block && i.floor === floor)) {
+    for (let i = 0; i + 3 < it.pts.length; i += 2) {
+      const ax = it.pts[i], ay = it.pts[i + 1], bx = it.pts[i + 2], by = it.pts[i + 3];
+      const L = Math.hypot(bx - ax, by - ay);
+      if (!L) continue;
+      dims.push({ ax, ay, bx, by, nx: -(by - ay) / L, ny: (bx - ax) / L, val: L * unitM(), measured: true });
+    }
   }
-  c.restore();
+  return { b, P, contours, dims, rooms };
 }
 function renderPlanCanvas(floor, W, H) {
   const block = S.block;
@@ -1852,8 +2009,8 @@ function renderPlanCanvas(floor, W, H) {
   const lineX = sx + 760;
   x.fillText('Планды түзгөн / План составил:', sx, sy + 150);
   x.lineWidth = 2; x.beginPath(); x.moveTo(lineX, sy + 170); x.lineTo(lineX + 520, sy + 170); x.stroke();
-  drawSignature(x, S.settings.signature, lineX + 20, sy + 70, 480, 120);
-  x.fillText(S.settings.author || '________________', lineX + 560, sy + 150);
+  // подпись и ФИО — от руки на распечатке
+  x.beginPath(); x.moveTo(lineX + 580, sy + 170); x.lineTo(lineX + 1100, sy + 170); x.stroke();
   x.textAlign = 'right'; x.fillStyle = PRINT.grey; x.font = '400 24px Arial, sans-serif';
   x.fillText('Размеры и площади — в метрах. Серым — не измерено (по чертежу) или скопировано с другого этажа.', W - mg - 30, H - mg - 30);
   return c;
@@ -1906,8 +2063,7 @@ function tablePages(title, sub, cols, rows, foot) {
       x.fillText(`Түзүлгөн датасы / Дата составления: ${todayRu()} г.`, M, sy);
       x.fillText('Планды түзгөн / План составил:', M, sy + 80);
       x.lineWidth = 2; x.strokeStyle = '#111'; x.beginPath(); x.moveTo(M + 470, sy + 98); x.lineTo(M + 870, sy + 98); x.stroke();
-      drawSignature(x, S.settings.signature, M + 490, sy + 10, 360, 95);
-      x.fillText(S.settings.author || '________________', M + 900, sy + 80);
+      x.beginPath(); x.moveTo(M + 900, sy + 98); x.lineTo(M + 1300, sy + 98); x.stroke();
     }
     pages.push({ canvas: c, landscape: false });
   }
@@ -1987,45 +2143,6 @@ async function renderDocs() {
     el.appendChild(row);
   }
 }
-/* ---------- подпись ---------- */
-function bindSignature() {
-  const pad = $('sigPad');
-  let strokes = [], cur = null;
-  const ctx2 = pad.getContext('2d');
-  const redraw = () => {
-    const r = pad.getBoundingClientRect();
-    pad.width = r.width * 2; pad.height = r.height * 2;
-    ctx2.setTransform(2, 0, 0, 2, 0, 0);
-    ctx2.clearRect(0, 0, r.width, r.height);
-    ctx2.strokeStyle = '#ccd'; ctx2.beginPath(); ctx2.moveTo(16, r.height - 40); ctx2.lineTo(r.width - 16, r.height - 40); ctx2.stroke();
-    ctx2.strokeStyle = '#1d3fbf'; ctx2.lineWidth = 2.4; ctx2.lineCap = 'round'; ctx2.lineJoin = 'round';
-    for (const st of strokes) { ctx2.beginPath(); for (let i = 0; i < st.length; i += 2) i ? ctx2.lineTo(st[i], st[i + 1]) : ctx2.moveTo(st[i], st[i + 1]); ctx2.stroke(); }
-  };
-  const pos = (e) => { const r = pad.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  pad.onpointerdown = (e) => { pad.setPointerCapture(e.pointerId); cur = pos(e); strokes.push(cur); };
-  pad.onpointermove = (e) => { if (!cur) return; cur.push(...pos(e)); redraw(); };
-  pad.onpointerup = pad.onpointercancel = () => { cur = null; };
-  $('btnSig').onclick = () => {
-    $('sigModal').hidden = false;
-    const sig = S.settings.signature;
-    strokes = sig?.strokes ? sig.strokes.map((st) => st.slice()) : [];
-    requestAnimationFrame(redraw);
-  };
-  $('sigClear').onclick = () => { strokes = []; redraw(); };
-  $('sigSave').onclick = () => {
-    if (!strokes.length) S.settings.signature = null;
-    else {
-      // обрезаем по рамке подписи
-      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const st of strokes) for (let i = 0; i < st.length; i += 2) { x0 = Math.min(x0, st[i]); x1 = Math.max(x1, st[i]); y0 = Math.min(y0, st[i + 1]); y1 = Math.max(y1, st[i + 1]); }
-      S.settings.signature = { w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), strokes: strokes.filter((st) => st.length >= 4).map((st) => st.map((v, i) => Math.round((i % 2 ? v - y0 : v - x0) * 10) / 10)) };
-    }
-    save(); syncSigState(); $('sigModal').hidden = true; toast(S.settings.signature ? 'Подпись сохранена' : 'Подпись удалена');
-  };
-  syncSigState();
-}
-function syncSigState() { $('sigState').textContent = S.settings.signature ? 'подпись сохранена ✓' : 'подписи нет'; }
-
 async function shareKind(kind, mode) {
   busy(true, 'Готовлю файл…');
   await new Promise((r) => setTimeout(r, 30));
@@ -2127,10 +2244,7 @@ const disto = new Disto();
 function bindDisto() {
   const btn = $('btnDisto');
   const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-  $('distoHelp').innerHTML = Disto.supported()
-    ? 'Включите Bluetooth на DISTO (кнопка Bluetooth), затем нажмите «DISTO» вверху и выберите прибор. Каждое измерение (кнопка ON/DIST на приборе) автоматически записывается в выбранную или ожидающую точку. Если точки нет — создаётся новая.'
-    : (ios ? 'Safari на iPhone не поддерживает Bluetooth для сайтов. Откройте приложение в браузере <b>Bluefy</b> (бесплатный, App Store) — там DISTO подключается напрямую. ' : 'Этот браузер не поддерживает Web Bluetooth — используйте Chrome на Android. ') +
-      'Либо включите на DISTO режим клавиатуры (Bluetooth HID): значения будут вводиться в поле ввода внизу автоматически.';
+  $('distoHelp').innerHTML = 'DISTO подключается к телефону по Bluetooth как клавиатура. Нажмите кнопку измерения на приборе — число само запишется в выбранную стену (поле ввода трогать не нужно, русская раскладка тоже подходит: «ю» читается как запятая).';
   btn.onclick = async () => {
     if (disto.state === 'on') {
       if (await ask('Отключить ' + (disto.device?.name || 'DISTO') + '?', 'Отключить')) disto.disconnect();
@@ -2161,12 +2275,38 @@ function bindEntry() {
     inp.value = '';
     onMeasure(Math.round(n * 10000) / 10000, 'manual');
   };
-  // DISTO в режиме клавиатуры «печатает» цифры и Enter — перехватываем, даже если поле не в фокусе
+  // в любом поле для чисел: «ю»/«б» (русская раскладка) → запятая
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t && t.tagName === 'INPUT' && t.inputMode === 'decimal' && /[юЮбБ.]/.test(t.value)) {
+      const pos = t.selectionStart;
+      t.value = t.value.replace(/[юЮбБ.]/g, ',');
+      try { t.setSelectionRange(pos, pos); } catch (er) { /* */ }
+    }
+  });
+  // DISTO по Bluetooth работает как клавиатура: печатает число и Enter/Tab.
+  // Собираем цифры сами, даже если ни одно поле не в фокусе (экранная клавиатура не появляется).
+  let kb = '', kbT = 0;
+  const isSep = (e) => /^[.,юЮбБ]$/.test(e.key) || e.code === 'Period' || e.code === 'Comma' || e.code === 'NumpadDecimal';
   document.addEventListener('keydown', (e) => {
     const a = document.activeElement;
     if (a && (a.tagName === 'INPUT' || a.tagName === 'SELECT' || a.tagName === 'TEXTAREA')) return;
-    if (/^[0-9.,]$/.test(e.key)) { inp.focus(); }
-    else if (e.key === 'Escape') { S.draft = null; updateDraftBar(); S.selSeg = null; select(null); }
+    if (/^[0-9]$/.test(e.key) || /^Digit[0-9]$|^Numpad[0-9]$/.test(e.code) || (isSep(e) && kb)) {
+      e.preventDefault();
+      const ch = /^[0-9]$/.test(e.key) ? e.key : /[0-9]$/.test(e.code) && !isSep(e) ? e.code.slice(-1) : ',';
+      if (ch === ',' && kb.includes(',')) return;
+      kb += ch; inp.value = kb;
+      clearTimeout(kbT); kbT = setTimeout(() => { kb = ''; inp.value = ''; }, 5000);
+      return;
+    }
+    if ((e.key === 'Enter' || e.key === 'Tab' || e.code === 'NumpadEnter') && kb) {
+      e.preventDefault();
+      const n = parseNum(kb); kb = ''; inp.value = ''; clearTimeout(kbT);
+      if (n > 0) onMeasure(Math.round(n * 10000) / 10000, 'disto');
+      return;
+    }
+    if (e.key === 'Backspace' && kb) { e.preventDefault(); kb = kb.slice(0, -1); inp.value = kb; return; }
+    if (e.key === 'Escape') { S.draft = null; updateDraftBar(); S.selSeg = null; select(null); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && S.selId) { removeItem(S.selId); }
     else if (e.key === 'z' && (e.ctrlKey || e.metaKey)) doUndo();
     else if (e.key === 'F3') { e.preventDefault(); $('btnSnap').click(); }
@@ -2198,11 +2338,10 @@ function bindMenu() {
     if (!(await ask('Вернуть встроенный план (блоки А, Б, В, Г)? Замеры сохранятся.', 'Вернуть'))) return;
     setPlan(JSON.parse(JSON.stringify(DEFAULT_PLAN))); await DB.set('plan', null); $('menuModal').hidden = true;
   };
-  for (const [id, key] of [['setAuthor', 'author'], ['setObj', 'objName']]) {
+  for (const [id, key] of [['setObj', 'objName']]) {
     $(id).value = S.settings[key] || '';
     $(id).oninput = (e) => { S.settings[key] = e.target.value.trim(); save(); };
   }
-  bindSignature();
   const fh = $('setFloorH');
   fh.value = S.settings.floorH ? fmt(S.settings.floorH) : '';
   fh.onchange = () => {
@@ -2280,7 +2419,7 @@ async function init() {
   $('btnUndo').onclick = doUndo;
   $('btnFit').onclick = () => { S.views[S.block] = fitView(blk()); draw(); };
   $('draftDone').onclick = () => finishSketch(false);
-  $('draftUndo').onclick = () => { if (S.draft) { S.draft.pts.splice(-2); draw(); } };
+  $('draftUndo').onclick = () => sketchUndo();
   $('draftCancel').onclick = () => { S.draft = null; updateDraftBar(); hint(''); draw(); };
   bindSheet(); bindEntry(); bindMenu(); bindDisto(); bindTools();
   new ResizeObserver(resize).observe(cv);

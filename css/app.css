@@ -245,7 +245,7 @@ tr.clk:active { background: var(--bg); }
 .bn input { height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); padding: 0 10px; width: 90px; color: var(--ink); }
 
 .toast {
-  position: fixed; left: 50%; top: calc(175px + var(--safeT)); transform: translateX(-50%); z-index: 60;
+  position: fixed; left: 50%; top: calc(235px + var(--safeT)); transform: translateX(-50%); z-index: 60;
   background: var(--top); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; font-weight: 600;
   box-shadow: var(--shadow); max-width: 90vw; text-align: center;
 }
@@ -290,3 +290,21 @@ tr.clk:active { background: var(--bg); }
 .docRow .dn b { white-space: normal; word-break: break-all; }
 .docRow .btn { flex: 1 1 auto; }
 .docRow .btn.danger { flex: 0 0 auto; }
+
+/* пульт направлений — слева, под левую руку */
+.dpad {
+  position: absolute; left: 10px; bottom: 14px; z-index: 6;
+  display: grid; grid-template-columns: repeat(3, 58px); grid-template-rows: repeat(3, 58px); gap: 4px;
+}
+.dpad button {
+  border-radius: 16px; background: var(--card); color: var(--ink); font-size: 24px; box-shadow: var(--shadow);
+  display: grid; place-items: center; touch-action: manipulation;
+}
+.dpad button:active { transform: scale(.94); }
+.dpad button.on { background: var(--accent2); color: #fff; }
+.dpad .du { grid-column: 2; grid-row: 1; } .dpad .dl { grid-column: 1; grid-row: 2; }
+.dpad .dc { grid-column: 2; grid-row: 2; font-size: 20px; color: var(--ink2); }
+.dpad .dr { grid-column: 3; grid-row: 2; } .dpad .dd { grid-column: 2; grid-row: 3; }
+.sheet.compact { gap: 8px; padding-top: 10px; }
+.sheet.compact .sheetTitle { font-size: 16px; }
+.disto { display: none !important; }
