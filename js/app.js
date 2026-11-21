@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.0.9';
+const VERSION = '2.1.0';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -574,6 +574,7 @@ function draw() {
   drawItems(ctx, v, pal, visibleItems());
   drawTexts(ctx, S.block, S.floor, v, pal);
   drawRuler(ctx, v, pal);
+  if (S.turnArm) drawTurnTip(ctx, v, pal);
   // черновик
   if (S.draft) {
     const d = S.draft;
@@ -889,7 +890,7 @@ function endPtr(e) {
   if (gesture.type === 'pinch') { if (ptrs.size === 0) gesture = null; else gesture = { type: 'none' }; return; }
   const g = gesture; gesture = null;
   if (g.type === 'slope') { if (g.moved) { save(); hint(''); } draw(); return; }
-  if (g.type === 'turn') { S.turnArm = false; syncOpenPad(); save(); draw(); return; }
+  if (g.type === 'turn') { save(); draw(); return; }
   if (g.type === 'drag') {
     snapMark = null;
     if (g.moved) { save(); refreshSheet(); }
@@ -3417,6 +3418,20 @@ function turnTarget() {
   const last = curItems().filter((i) => i.kind === 'sketch' && i.dirs?.length && !i.closed).sort((a, b) => (b.t || 0) - (a.t || 0))[0];
   return last ? { it: last, k: last.dirs.length - 1 } : null;
 }
+/** Режим «угол»: последняя линия и её конец — синим */
+function drawTurnTip(c, v, pal) {
+  const tt = turnTarget(); if (!tt) return;
+  const { it, k } = tt;
+  const n = it.pts.length / 2, j = (k + 1) % n;
+  const a = w2s(it.pts[k * 2], it.pts[k * 2 + 1], v), b = w2s(it.pts[j * 2], it.pts[j * 2 + 1], v);
+  c.save();
+  c.strokeStyle = '#1f6feb'; c.lineWidth = 5; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+  c.fillStyle = 'rgba(31,111,235,.18)'; c.beginPath(); c.arc(b.x, b.y, 22, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#1f6feb'; c.strokeStyle = '#fff'; c.lineWidth = 3;
+  c.beginPath(); c.arc(b.x, b.y, 11, 0, Math.PI * 2); c.fill(); c.stroke();
+  c.restore();
+}
 /** Повернуть последнюю линию к точке экрана (шаг 5°) */
 function turnToward(sx, sy) {
   const tt = turnTarget(); if (!tt) return null;
@@ -3468,10 +3483,10 @@ function bindEntry() {
   $('kpLeft').onclick = () => turnLast(1);
   $('kpRight').onclick = () => turnLast(-1);
   $('btnTurn').onclick = () => {
-    if (S.turnArm) { S.turnArm = false; syncOpenPad(); return; }
+    if (S.turnArm) { S.turnArm = false; syncOpenPad(); draw(); return; }
     if (!turnTarget()) { toast('Сначала начертите линию', true); return; }
     S.openArm = null; S.turnArm = true; syncOpenPad();
-    toast('Нажмите на экран — куда повернуть последнюю линию', true);
+    toast('Конец линии синий — нажимайте на экран, куда повернуть. Ещё раз «°» — готово', true); draw();
   };
   $('kpClose').onclick = kpClose;
   // в любом поле для чисел: «ю»/«б» (русская раскладка) → запятая
