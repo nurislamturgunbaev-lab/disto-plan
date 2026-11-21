@@ -3,9 +3,9 @@ import { Disto } from './disto.js';
 import { DxfWriter } from './dxf.js';
 import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
-import { zipOne } from './zip.js';
+import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '1.6.0';
+const VERSION = '1.6.1';
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
 
@@ -2232,6 +2232,23 @@ function buildFullReport() {
     return canvasesToPdf(pages, 0.85);
   } finally { S.block = keepB; S.floor = keepF; }
 }
+/** Всё одним файлом: ZIP с полным PDF-отчётом, DXF по блокам, Excel и копией данных */
+async function buildReportZip() {
+  const st = stamp();
+  const files = [{ name: `Полный_отчёт_${st}.pdf`, blob: buildFullReport() }];
+  const keepB = S.block, keepScope = listScope;
+  try {
+    for (const b of S.plan.blocks) {
+      if (!floorsWithData(b.name).length) continue;
+      S.block = b.name;
+      files.push({ name: `Блок_${b.name}_все_этажи_мм.dxf`, blob: buildDxf(true) });
+    }
+    listScope = 'all';
+    files.push({ name: `Замеры_${st}.csv`, blob: buildCsv() });
+  } finally { S.block = keepB; listScope = keepScope; }
+  files.push({ name: `Копия_данных_${st}.json`, blob: new Blob([JSON.stringify({ app: 'disto-plan', v: VERSION, items: S.items, settings: S.settings, plan: stripPrep(S.plan) })], { type: 'application/json' }) });
+  return zipMany(files);
+}
 function canvasBlob(c, type = 'image/png') { return new Promise((r) => c.toBlob(r, type)); }
 
 /* ---------- архив документов ---------- */
@@ -2271,7 +2288,8 @@ async function shareKind(kind, mode) {
   let name, blob;
   try {
     if (kind === 'pdf') { blob = buildPdf(false); name = fileBase('этаж_' + S.floor) + '.pdf'; }
-    else if (kind === 'full') { blob = buildFullReport(); name = `Полный_отчёт_${stamp()}.pdf`; }
+    else if (kind === 'full') { blob = await buildReportZip(); name = `Отчёт_${stamp()}.zip`; }
+    else if (kind === 'fullpdf') { blob = buildFullReport(); name = `Полный_отчёт_${stamp()}.pdf`; }
     else if (kind === 'pdfall') { blob = buildPdf(true); name = fileBase('все_этажи') + '.pdf'; }
     else if (kind === 'dxf') { blob = buildDxf(false); name = fileBase('этаж_' + S.floor) + '.dxf'; }
     else if (kind === 'dxfall') { blob = buildDxf(true); name = fileBase('все_этажи') + '.dxf'; }
