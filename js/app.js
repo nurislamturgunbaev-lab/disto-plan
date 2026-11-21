@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.0.4';
+const VERSION = '2.0.5';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -791,7 +791,8 @@ cv.addEventListener('pointerdown', (e) => {
   // в режимах черчения/проёмов/рулетки нажатие идёт в инструмент; перетаскивать можно только двери и окна
   const freeHit = ['select', 'point', 'line', 'walls'].includes(S.tool) && !S.openArm;
   const op0 = !S.draft ? pickOpen(p.x, p.y) : null;
-  const h = op0 ? { it: op0, part: 'body' } : S.draft || !freeHit ? null : hit(p.x, p.y);
+  let h = op0 ? { it: op0, part: 'body' } : S.draft || !freeHit ? null : hit(p.x, p.y);
+  if (h && S.tool === 'walls' && h.it.kind === 'sketch') h = null; // в «Стенах» нарисованная стена — нажатие для замера
   if (h) {
     if (h.it.kind === 'open') {
       const now2 = Date.now();
@@ -918,7 +919,13 @@ function tap(p) {
   }
   if (S.tool === 'walls') {
     const sg = pickSeg(p.x, p.y);
-    if (!sg) { selectSeg(null); return; }
+    if (!sg) {
+      selectSeg(null);
+      const hs = pickSketchSeg(p.x, p.y, false, 26);
+      if (hs) askSkm(hs.it, hs.k, () => { S.tool = 'sketch'; syncToolUI(); });
+      else if (!hasDrawing()) toast('Нажмите на стену нарисованной комнаты', true);
+      return;
+    }
     if (S.session) { selectSeg(sg.key); return; }
     selectSeg(sg.key);
     ask(`Начинаем замер?\nКомната ${sg.room}, стена ${sg.wall} из ${sg.of}. Замеры с лазера будут записываться автоматически, стена за стеной, затем соседние комнаты.`, 'Да, начать').then((yes) => {
@@ -958,7 +965,11 @@ function tap(p) {
     if (!d || (nSeg === 0 && d.auto)) {
       // нажатие на стену готовой комнаты — замер этой стены
       const hs = pickSketchSeg(p.x, p.y, false);
-      if (hs) { startSkm(hs.it, hs.k); return; }
+      if (hs) {
+        const wpt = w;
+        askSkm(hs.it, hs.k, null, () => { S.skm = null; S.draft = { kind: 'sketch', pts: [wpt.x, wpt.y] }; hint('Начало линии. Направление + лазер'); draw(); });
+        return;
+      }
       S.skm = null;
       S.draft = { kind: 'sketch', pts: [w.x, w.y] };
       hint('Начало линии. Направление + лазер, или нажимайте точки');
@@ -1090,6 +1101,17 @@ function closeSketch(it, viaTap) {
 function afterRoomDone() {
   S.skm = null;
   if (isBlank() && S.tool === 'sketch') { startBlankDraft(); S.sketchRel = 's'; S.views[S.block] = fitView(blk()); }
+}
+/** Спросить перед замером стены нарисованной комнаты */
+function askSkm(it, k, onYes, onNo) {
+  const n = it.dirs.length, cur = it.lens[k];
+  const txt = cur != null
+    ? `Стена ${k + 1} из ${n} уже измерена: ${fmt(cur)} м.\nПеремерить её? Дальше замер пойдёт по очереди.`
+    : `Начинаем замер?\nСтена ${k + 1} из ${n}. Замеры с лазера будут записываться по очереди, стена за стеной.`;
+  ask(txt, cur != null ? 'Да, перемерить' : 'Да, начать').then((yes) => {
+    if (yes) { onYes && onYes(); startSkm(it, k); }
+    else if (onNo) onNo();
+  });
 }
 /** Замер нарисованной линии/комнаты: стены по очереди */
 function startSkm(it, k) { S.skm = { id: it.id, i: k }; S.draft = null; hint(`Замер: стена ${k + 1} из ${it.dirs.length} — меряйте лазером`); draw(); }
@@ -2372,7 +2394,7 @@ function startBlankDraft() {
 }
 function setBlock(name) {
   S.block = name; S.draft = null; S.selSeg = null; S.session = false; select(null);
-  if (S.plan.blocks.find((b) => b.name === name)?.blank) { if (S.tool === 'walls') { S.tool = 'sketch'; syncToolUI(); } if (S.tool === 'sketch') startBlankDraft(); }
+  if (S.plan.blocks.find((b) => b.name === name)?.blank) { if (S.tool === 'sketch') startBlankDraft(); }
   syncToolUI();
   renderBlocks(); updateDraftBar(); save(); draw();
 }
@@ -2415,7 +2437,7 @@ function setDir(d) {
 }
 function syncToolUI() {
   const wb = $('tools').querySelector('[data-tool=walls]');
-  if (wb) wb.hidden = !hasDrawing();
+  if (wb) wb.hidden = false;
   $('toolText').hidden = !S.settings.layers.text;
   $('btnRedo').hidden = !S.settings.layers.redoBtn;
   $('mRedo').hidden = !S.settings.layers.redoBtn;
@@ -2561,7 +2583,7 @@ function ask(text, okText = 'Да', danger = false, input = null) {
     ok.textContent = okText; ok.className = 'btn ' + (danger ? 'danger' : 'primary');
     no.hidden = okText === 'OK';
     inp.hidden = input == null; if (input != null) { inp.value = input; setTimeout(() => inp.focus(), 60); }
-    m.hidden = false;
+    m.hidden = false; m._openT = Date.now();
     const done = (v) => { m.hidden = true; ok.onclick = no.onclick = $('askX').onclick = null; askDone = null; res(v && input != null ? inp.value : v); };
     askDone = done;
     ok.onclick = () => done(true); no.onclick = () => done(false); $('askX').onclick = () => done(false);
@@ -3449,7 +3471,11 @@ function bindEntry() {
 /* ---------- меню ---------- */
 function bindMenu() {
   for (const m of document.querySelectorAll('.modal')) {
-    m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-close]')) m.hidden = true; });
+    m.addEventListener('click', (e) => {
+      if (e.target.closest('[data-close]')) { m.hidden = true; return; }
+      // фон: окно-вопрос закрывается только кнопками (иначе «клик» после касания сразу его закрывает)
+      if (e.target === m && m.id !== 'askModal' && Date.now() - (m._openT || 0) > 500) m.hidden = true;
+    });
   }
   $('btnMenu').onclick = () => { renderPlanInfo(); $('menuModal').hidden = false; };
   for (const b of $('listScope').children) b.onclick = () => {
@@ -3583,7 +3609,6 @@ async function init() {
   }
   S.plan.unit = S.plan.unit || 'cm';
   if (!S.plan.blocks.find((b) => b.name === S.block)) S.block = S.plan.blocks[0]?.name ?? null;
-  if ((!blk() || blk().blank) && S.tool === 'walls') S.tool = 'sketch';
 
   applyTheme();
   renderBlocks();
