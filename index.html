@@ -255,6 +255,11 @@
       <label class="field"><span>Высота этажа, м (для проектного значения)</span><input id="setFloorH" inputmode="decimal" placeholder="напр. 3,00"></label>
       <label class="field"><span>Тема</span><select id="setTheme"><option value="light">Светлая</option><option value="dark">Тёмная</option></select></label>
     </div>
+    <h3>Этажи и тень</h3>
+    <p class="muted small">Тень — бледный план ближайшего этажа под вашим чертежом.</p>
+    <label class="check"><input type="checkbox" id="setShadow"> Показывать тень соседнего этажа</label>
+    <label class="check"><input type="checkbox" id="setShadowDims"> Размеры на тени</label>
+    <button class="btn wide" id="btnCopyFloor">⧉ Копировать этаж на текущий…</button>
     <h3>Обмер стен</h3>
     <label class="check"><input type="checkbox" id="setAutoNext" checked> После замера переходить к следующей стене</label>
     <label class="check"><input type="checkbox" id="setWallLabels" checked> Показывать длины по чертежу</label>
@@ -331,6 +336,25 @@
       <button class="btn" id="flPlus">+</button>
     </div>
     <button class="btn primary wide" id="flApply">Перейти на этаж</button>
+  </div>
+</div>
+
+<!-- Копировать этаж -->
+<div class="modal" id="copyModal" hidden>
+  <div class="panel narrow">
+    <div class="panelHead"><h2 id="cpTitle">Копировать чертёж?</h2><button class="ic ghost" id="cpX" aria-label="Закрыть">✕</button></div>
+    <p class="muted" id="cpSub"></p>
+    <label class="field" id="cpFromWrap" hidden><span>С какого этажа</span><select id="cpFrom"></select></label>
+    <div class="cpOpts">
+      <label class="cpOpt"><input type="radio" name="cpMode" value="lines" checked><span class="cpTick"></span>
+        <span class="cpTxt"><b>Только линии</b><small>Форма комнат без размеров — замерите заново</small></span>
+        <svg viewBox="0 0 48 32"><path d="M6 26V6h36v20z" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></label>
+      <label class="cpOpt"><input type="radio" name="cpMode" value="dims"><span class="cpTick"></span>
+        <span class="cpTxt"><b>Линии и размеры</b><small>Полная копия со всеми замерами</small></span>
+        <svg viewBox="0 0 48 32"><path d="M6 26V6h36v20z" fill="none" stroke="currentColor" stroke-width="2.4"/><rect x="17" y="1" width="14" height="9" rx="3" fill="#16a34a"/><rect x="31" y="12" width="14" height="9" rx="3" fill="#16a34a"/></svg></label>
+    </div>
+    <label class="check"><input type="checkbox" id="cpOpen" checked> Двери и окна тоже</label>
+    <div class="row cpBtns"><button class="btn" id="cpNo">Не копировать</button><button class="btn primary" id="cpYes">Копировать</button></div>
   </div>
 </div>
 

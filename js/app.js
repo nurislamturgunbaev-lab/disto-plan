@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.1.4';
+const VERSION = '2.2.0';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -76,7 +76,7 @@ const S = {
   draft: null, // {kind:'line'|'sketch', pts:[]}
   settings: { floorH: 0, theme: 'light', otherFloors: false, snap: true, beep: true, autoNext: true, wallMin: 0.15, wallColumns: false, wallLabels: true, ortho: false, snapModes: { end: true, mid: true, perp: true, near: false },
     polar: false, rotate: false, laserRef: 'back', laserOffset: 0.13, wallTh: 0, btnPos: {},
-    layers: { drawing: true, shadow: true, dims: true, areas: true, openings: true, thick: true, hatch: false, text: false, redoBtn: false, roomOps: false, mini: true } },
+    layers: { drawing: true, shadow: true, dims: true, areas: true, openings: true, thick: true, hatch: false, text: false, redoBtn: false, roomOps: false, mini: true, shadowDims: false } },
   views: {},
   undo: [],
   lastMeasure: null,
@@ -383,6 +383,16 @@ function drawShadow(c, b, v, pal) {
   for (const it of S.items) {
     if (it.block !== b.name || it.floor !== f || it.kind !== 'sketch') continue;
     c.beginPath(); path(c, it.pts, v); if (it.closed) c.closePath(); c.stroke();
+    if (S.settings.layers.shadowDims && it.dirs) for (const sg of sketchSegs(it)) {
+      if (it.lens[sg.k] == null && it.noDims) continue;
+      const a = w2s(sg.ax, sg.ay, v), e = w2s(sg.bx, sg.by, v);
+      if (Math.hypot(e.x - a.x, e.y - a.y) < 34) continue;
+      let rot = Math.atan2(e.y - a.y, e.x - a.x);
+      if (rot > Math.PI / 2) rot -= Math.PI; if (rot < -Math.PI / 2) rot += Math.PI;
+      const m0 = w2s((sg.ax + sg.bx) / 2, (sg.ay + sg.by) / 2, v), m1 = w2s((sg.ax + sg.bx) / 2 - sg.nx, (sg.ay + sg.by) / 2 - sg.ny, v);
+      let nx = m1.x - m0.x, ny = m1.y - m0.y; const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+      pill(c, m0.x + nx * 13, m0.y + ny * 13, fmt(sg.len), pal.dark ? 'rgba(71,85,105,.75)' : 'rgba(148,163,184,.55)', '#fff', { rot, size: 10, shadow: false, bold: false });
+    }
   }
   if (!b.blank) {
     const m = segMapFor(b.name, f);
@@ -537,6 +547,7 @@ function sketchLabels(c, it, v, pal, col) {
     const a = w2s(sg.ax, sg.ay, v), e = w2s(sg.bx, sg.by, v);
     const Lp = Math.hypot(e.x - a.x, e.y - a.y);
     if (Lp < 16) continue;
+    if (!sg.measured && it.noDims) continue; // копия «только линии» — размеры появятся после замера
     let rot = Math.atan2(e.y - a.y, e.x - a.x);
     if (rot > Math.PI / 2) rot -= Math.PI; if (rot < -Math.PI / 2) rot += Math.PI;
     // подпись внутри комнаты
@@ -2108,6 +2119,7 @@ function bindMbar() {
 const LAYERS = [
   ['drawing', 'Чертёж (подложка, красный)', 'загруженный DWG/DXF'],
   ['shadow', 'Тень соседнего этажа', 'бледный контур этажа выше/ниже'],
+  ['shadowDims', 'Размеры на тени', 'длины стен соседнего этажа, серым'],
   ['dims', 'Размеры', 'длины стен'],
   ['areas', 'Номера и площади комнат', ''],
   ['openings', 'Двери и окна', ''],
@@ -2404,23 +2416,71 @@ function setBlock(name) {
   syncToolUI();
   renderBlocks(); updateDraftBar(); save(); draw();
 }
-/** Копирует обмер (стены, уклоны, двери/окна, эскизы) с этажа from на этаж to, если там пусто */
-function copyFloor(from, to) {
-  if (from === to) return 0;
-  let n = 0;
-  const blocks = [...new Set(S.items.filter((i) => i.floor === from).map((i) => i.block))];
-  for (const b of blocks) {
-    if (S.items.some((i) => i.block === b && i.floor === to)) continue;
-    const src = S.items.filter((i) => i.block === b && i.floor === from && (i.kind === 'seg' || i.kind === 'open' || i.kind === 'sketch'));
-    for (const i of src) {
-      const c = JSON.parse(JSON.stringify(i));
-      c.id = uid(); c.floor = to; c.t = Date.now();
-      if (c.kind === 'seg' && c.value != null) c.copied = { from };
-      delete c.mt; delete c.src;
-      S.items.push(c); n++;
+const COPY_KINDS = ['sketch', 'open', 'seg', 'text'];
+function floorHasData(f, block = S.block) {
+  return S.items.some((i) => i.block === block && i.floor === f && COPY_KINDS.includes(i.kind));
+}
+function floorsWithDrawing(block = S.block) {
+  return [...new Set(S.items.filter((i) => i.block === block && COPY_KINDS.includes(i.kind)).map((i) => i.floor))].sort((a, b) => b - a);
+}
+/** Копия этажа: mode 'lines' — только форма, 'dims' — с размерами */
+function copyFloor(src, dst, mode, withOpen) {
+  pushUndo();
+  const idMap = new Map(), now = Date.now(), add = [];
+  for (const it of S.items.filter((i) => i.block === S.block && i.floor === src && i.kind === 'sketch')) {
+    const c = JSON.parse(JSON.stringify(it));
+    c.id = uid(); c.floor = dst; c.t0 = now; c.t = now; idMap.set(it.id, c.id);
+    if (mode === 'lines' && c.dirs) {
+      c.dlens = c.dirs.map((_, k) => it.lens[k] ?? it.dlens[k] ?? 0);
+      c.lens = c.dirs.map(() => null); c.noDims = true;
+      delete c.value; delete c.mt; delete c.src;
     }
+    if (c.dirs) rebuildSketch(c);
+    add.push(c);
   }
-  return n;
+  if (withOpen) for (const it of S.items.filter((i) => i.block === S.block && i.floor === src && i.kind === 'open')) {
+    const c = JSON.parse(JSON.stringify(it));
+    const m = /^sk:([^:]+):(\d+)$/.exec(c.key || '');
+    if (m) { if (!idMap.has(m[1])) continue; c.key = `sk:${idMap.get(m[1])}:${m[2]}`; }
+    c.id = uid(); c.floor = dst; c.t0 = now; add.push(c);
+  }
+  if (mode === 'dims') for (const it of S.items.filter((i) => i.block === S.block && i.floor === src && (i.kind === 'seg' || i.kind === 'text'))) {
+    const c = JSON.parse(JSON.stringify(it)); c.id = uid(); c.floor = dst; add.push(c);
+  }
+  S.items.push(...add);
+  save(); draw();
+  toast(`Этаж ${src} скопирован на этаж ${dst}` + (mode === 'lines' ? ' — только линии' : ' — с размерами'), true);
+}
+/** Окно «Копировать чертёж?» → { mode, open, src } или null */
+function askCopy(src, dst, pickSrc) {
+  return new Promise((res) => {
+    const m = $('copyModal');
+    $('cpTitle').textContent = pickSrc ? 'Копировать этаж' : 'Копировать чертёж?';
+    $('cpFromWrap').hidden = !pickSrc;
+    if (pickSrc) {
+      const fl = floorsWithDrawing().filter((f) => f !== dst);
+      $('cpFrom').innerHTML = fl.map((f) => `<option value="${f}"${f === src ? ' selected' : ''}>Этаж ${f}</option>`).join('');
+    }
+    const sub = () => { const s0 = pickSrc ? +$('cpFrom').value : src; $('cpSub').textContent = `С этажа ${s0} на этаж ${dst}. Выберите, что перенести:`; };
+    sub(); $('cpFrom').onchange = sub;
+    m.hidden = false; m._openT = Date.now();
+    const done = (v) => { m.hidden = true; $('cpYes').onclick = $('cpNo').onclick = $('cpX').onclick = null; askDone = null; res(v); };
+    askDone = () => done(null);
+    $('cpNo').onclick = () => done(null);
+    $('cpX').onclick = () => done(null);
+    $('cpYes').onclick = () => done({ mode: m.querySelector('input[name=cpMode]:checked').value, open: $('cpOpen').checked, src: pickSrc ? +$('cpFrom').value : src });
+  });
+}
+/** Смена этажа кнопками − / +: если на этом этаже есть чертёж, а на новом пусто — предложить копию */
+async function changeFloor(f) {
+  const from = S.floor;
+  if (f !== from && floorHasData(from) && !floorHasData(f)) {
+    const r = await askCopy(from, f);
+    setFloor(f);
+    if (r) copyFloor(r.src, f, r.mode, r.open);
+    return;
+  }
+  setFloor(f);
 }
 function setFloor(f, keepTo, noCopy) {
   const from = S.floor;
@@ -3453,6 +3513,7 @@ function bindDisto() {
 function closeTopmost() {
   if (kpOpen()) { kpClose(); return true; }
   if (!$('askModal').hidden) { askDone ? askDone(false) : ($('askModal').hidden = true); return true; }
+  if (!$('copyModal').hidden) { askDone ? askDone(null) : ($('copyModal').hidden = true); return true; }
   const mods = [...document.querySelectorAll('.modal')].filter((m) => !m.hidden && m.id !== 'askModal');
   if (mods.length) { mods[mods.length - 1].hidden = true; return true; }
   if (document.body.classList.contains('arrange')) { setArrange(false); return true; }
@@ -3627,10 +3688,25 @@ function bindMenu() {
     m.addEventListener('click', (e) => {
       if (e.target.closest('[data-close]')) { m.hidden = true; return; }
       // фон: окно-вопрос закрывается только кнопками (иначе «клик» после касания сразу его закрывает)
-      if (e.target === m && m.id !== 'askModal' && Date.now() - (m._openT || 0) > 500) m.hidden = true;
+      if (e.target === m && m.id !== 'askModal' && m.id !== 'copyModal' && Date.now() - (m._openT || 0) > 500) m.hidden = true;
     });
   }
-  $('btnMenu').onclick = () => { renderPlanInfo(); $('menuModal').hidden = false; };
+  $('btnMenu').onclick = () => {
+    renderPlanInfo();
+    $('setShadow').checked = !!S.settings.layers.shadow; $('setShadowDims').checked = !!S.settings.layers.shadowDims;
+    $('menuModal').hidden = false;
+  };
+  $('setShadow').onchange = (e) => { S.settings.layers.shadow = e.target.checked; save(); draw(); };
+  $('setShadowDims').onchange = (e) => { S.settings.layers.shadowDims = e.target.checked; if (e.target.checked) { S.settings.layers.shadow = true; $('setShadow').checked = true; } save(); draw(); };
+  $('btnCopyFloor').onclick = async () => {
+    const fl = floorsWithDrawing().filter((f) => f !== S.floor);
+    if (!fl.length) { toast('Нет других этажей с чертежом', true); return; }
+    $('menuModal').hidden = true;
+    if (floorHasData(S.floor) && !(await ask(`На этаже ${S.floor} уже есть чертёж. Копия добавится поверх него. Продолжить?`, 'Продолжить'))) return;
+    const near = shadowFloor() ?? fl[0];
+    const r = await askCopy(fl.includes(near) ? near : fl[0], S.floor, true);
+    if (r) copyFloor(r.src, S.floor, r.mode, r.open);
+  };
   for (const b of $('listScope').children) b.onclick = () => {
     listScope = b.dataset.scope;
     for (const o of $('listScope').children) o.classList.toggle('on', o === b);
@@ -3704,7 +3780,7 @@ function bindMenu() {
     const f = parseInt($('flIn').value, 10);
     if (isNaN(f)) { toast('Введите номер этажа'); return; }
     $('floorModal').hidden = true;
-    setFloor(f, false);
+    changeFloor(f);
     toast(`Этаж ${f}`);
   };
   $('flApply').onclick = applyFloor;
@@ -3767,8 +3843,8 @@ async function init() {
   $('floorNum').textContent = S.floor;
   $('toFloorNum').textContent = S.toFloor ?? '—';
   setDir(S.dir);
-  $('floorDown').onclick = () => setFloor(S.floor - 1);
-  $('floorUp').onclick = () => setFloor(S.floor + 1);
+  $('floorDown').onclick = () => changeFloor(S.floor - 1);
+  $('floorUp').onclick = () => changeFloor(S.floor + 1);
   for (const b of $('dirSeg').children) b.onclick = () => setDir(b.dataset.dir);
   $('btnUndo').onclick = doUndo;
   $('btnFit').onclick = () => { S.views[S.block] = fitView(blk()); draw(); };
