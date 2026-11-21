@@ -106,6 +106,7 @@
     <div class="openPad" id="openPad" data-fl="openPad" hidden>
       <button data-ot="door" title="Дверь" aria-label="Дверь"><svg viewBox="0 0 24 24"><path d="M3 20h4M17 20h4M7 20V8" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M7 8a12 12 0 0110 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2 2"/></svg></button>
       <button data-ot="window" title="Окно" aria-label="Окно"><svg viewBox="0 0 24 24"><path d="M3 8h18M3 12h18M3 16h18M3 8v8M21 8v8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+      <button id="btnTurn" class="turnBtn" title="Повернуть последнюю линию на угол" aria-label="Повернуть"><svg viewBox="0 0 24 24"><path d="M4 20h16M4 20L16 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M11 20a7 7 0 00-2-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><small>°</small></button>
     </div>
     <div class="compass" id="compass" title="Север плана — нажмите, чтобы вернуть" hidden><svg viewBox="0 0 40 40" width="40" height="40"><circle cx="20" cy="20" r="18" fill="var(--card)" stroke="var(--line)"/><g id="compassNeedle"><path d="M20 5l5 15h-10z" fill="#e03131"/><path d="M20 35l5-15h-10z" fill="#94a3b8"/><text x="20" y="13" text-anchor="middle" font-size="7" font-weight="800" fill="#fff">N</text></g></svg></div>
     <button class="flt polarT" id="btnPolar" data-fl="btnPolar" aria-label="Полярные углы 5°" title="Полярные углы 5°"><b>∠5°</b><small>УГОЛ</small></button>
@@ -291,7 +292,7 @@
 <!-- Цифровая клавиатура для ручного ввода -->
 <div class="keypad" id="keypad" hidden>
   <div class="kpHead">
-    <div class="kpDisp"><b id="kpVal">0</b><span>м</span></div>
+    <div class="kpDisp"><b id="kpVal">0</b><span id="kpUnit">м</span></div>
     <button class="kpX" id="kpClose" aria-label="Закрыть">✕</button>
   </div>
   <div class="kpGrid">
@@ -301,6 +302,7 @@
     <button data-k=",">,</button><button data-k="0">0</button><button data-k="bs" aria-label="Стереть">⌫</button>
   </div>
   <button class="btn primary wide kpOk" id="kpOk">✓ Записать</button>
+  <div class="kpTurn" id="kpTurn" hidden><button class="btn" id="kpLeft">↺ Налево</button><button class="btn" id="kpRight">Направо ↻</button></div>
 </div>
 
 <!-- Слои -->

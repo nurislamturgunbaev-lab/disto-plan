@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.0.7';
+const VERSION = '2.0.8';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -3396,8 +3396,36 @@ function closeTopmost() {
 }
 let kpStr = '';
 const kpOpen = () => !$('keypad').hidden;
-function kpShow() { kpStr = ''; $('kpVal').textContent = '0'; $('keypad').hidden = false; }
-function kpClose() { $('keypad').hidden = true; kpStr = ''; }
+let kpAngle = false;
+function kpShow(angle = false) {
+  kpAngle = angle; kpStr = ''; $('kpVal').textContent = '0';
+  $('kpUnit').textContent = angle ? '°' : 'м';
+  $('kpOk').hidden = angle; $('kpTurn').hidden = !angle;
+  $('keypad').hidden = false;
+}
+/** Последняя линия: та, что сейчас чертится, или стена, которую сейчас меряем */
+function turnTarget() {
+  const sk = skmItem();
+  if (sk && sk.dirs) return { it: sk, k: S.skm.i };
+  const it = skItem();
+  if (it?.dirs?.length) return { it, k: it.dirs.length - 1 };
+  const last = curItems().filter((i) => i.kind === 'sketch' && i.dirs?.length && !i.closed).sort((a, b) => (b.t || 0) - (a.t || 0))[0];
+  return last ? { it: last, k: last.dirs.length - 1 } : null;
+}
+function turnLast(sign) {
+  const n = parseNum(kpStr);
+  if (n == null || n <= 0 || n >= 360) { toast('Введите угол в градусах, например 15', true); return; }
+  const tt = turnTarget();
+  if (!tt) { kpClose(); toast('Нет линии для поворота', true); return; }
+  pushUndo();
+  const { it, k } = tt;
+  it.dirs[k] = (((it.dirs[k] + sign * n) % 360) + 360) % 360;
+  rebuildSketch(it);
+  if (S.draft?.itemId === it.id) S.draft.pts = it.pts.slice();
+  save(); kpClose(); draw();
+  toast(`Линия повернута ${sign > 0 ? 'налево' : 'направо'} на ${String(n).replace('.', ',')}°`, true);
+}
+function kpClose() { $('keypad').hidden = true; kpStr = ''; kpAngle = false; }
 function kpKey(k) {
   if (k === 'bs') kpStr = kpStr.slice(0, -1);
   else if (k === ',') { if (!kpStr.includes(',')) kpStr = (kpStr || '0') + ','; }
@@ -3417,6 +3445,9 @@ function bindEntry() {
   inp.addEventListener('focus', () => { inp.blur(); });
   for (const b of $('keypad').querySelectorAll('[data-k]')) b.onclick = () => kpKey(b.dataset.k);
   $('kpOk').onclick = kpOk;
+  $('kpLeft').onclick = () => turnLast(1);
+  $('kpRight').onclick = () => turnLast(-1);
+  $('btnTurn').onclick = () => { if (!turnTarget()) { toast('Сначала начертите линию', true); return; } kpShow(true); };
   $('kpClose').onclick = kpClose;
   // в любом поле для чисел: «ю»/«б» (русская раскладка) → запятая
   document.addEventListener('input', (e) => {
