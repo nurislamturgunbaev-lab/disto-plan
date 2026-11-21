@@ -5,7 +5,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '1.7.1';
+const VERSION = '1.8.0';
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
 
@@ -216,8 +216,22 @@ function V() {
   if (!S.views[S.block]) S.views[S.block] = fitView(blk());
   return S.views[S.block];
 }
+/** Рамка для показа: на пустом листе — по начерченным комнатам */
+function viewBox(b) {
+  if (!b.blank) return b.bbox;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const it of S.items) {
+    if (it.block !== b.name || it.floor !== S.floor || it.kind !== 'sketch') continue;
+    for (let i = 0; i < it.pts.length; i += 2) { x0 = Math.min(x0, it.pts[i]); x1 = Math.max(x1, it.pts[i]); y0 = Math.min(y0, it.pts[i + 1]); y1 = Math.max(y1, it.pts[i + 1]); }
+  }
+  if (!isFinite(x0)) return b.bbox;
+  const mg = 1.5 / unitM();
+  const minW = 8 / unitM();
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, hw = Math.max((x1 - x0) / 2 + mg, minW / 2), hh = Math.max((y1 - y0) / 2 + mg, minW / 3);
+  return [cx - hw, cy - hh, cx + hw, cy + hh];
+}
 function fitView(b, w = cv.clientWidth, h = cv.clientHeight, pad = 36) {
-  const [x0, y0, x1, y1] = b.bbox;
+  const [x0, y0, x1, y1] = viewBox(b);
   const s = Math.min((w - pad * 2) / (x1 - x0 || 1), (h - pad * 2) / (y1 - y0 || 1));
   return { s, ox: w / 2 - ((x0 + x1) / 2) * s, oy: h / 2 + ((y0 + y1) / 2) * s };
 }
@@ -369,6 +383,11 @@ function drawItems(c, v, pal, items, opts = {}) {
       c.setLineDash([]);
       c.beginPath(); path(c, it.pts, v); if (it.closed) c.closePath(); c.stroke();
       sketchLabels(c, it.pts, v, pal, sel ? pal.accent2 : pal.accent);
+      if (it.closed) {
+        const cp = w2s(...Object.values(polyCentroid(it.pts)), v);
+        const no = curItems().filter((q) => q.kind === 'sketch' && q.closed).indexOf(it) + 1;
+        pill(c, cp.x, cp.y, `№${no} · ${fmt(polyArea(it.pts) * unitM() * unitM())} м²` + (it.gap >= 0.005 ? ` · невязка ${fmt(it.gap)}` : ''), pal.card, pal.ink, { size: 12, border: it.gap >= 0.01 ? pal.bad : pal.ok });
+      }
       if (sel) for (let i = 0; i < it.pts.length; i += 2) handle(c, w2s(it.pts[i], it.pts[i + 1], v), pal);
     } else if (it.kind === 'line') {
       const a = w2s(it.x, it.y, v), b = w2s(it.x2, it.y2, v);
@@ -823,9 +842,34 @@ function sketchAppend(meters, src) {
     S.items.push(it); d.itemId = it.id;
   }
   it.pts = d.pts.slice(); it.lens = d.lens.slice();
+  growBlank(d.pts[n], d.pts[n + 1]);
   save(); feedback();
   toast(`${fmt(meters)} м · ${{ l: 'налево', s: 'прямо', r: 'направо' }[S.sketchRel || 's']}`);
+  // вернулись к началу — комната замкнута; невязку сохраняем как есть
+  const m = d.pts.length;
+  if (m >= 8) {
+    const gap = Math.hypot(d.pts[m - 2] - d.pts[0], d.pts[m - 1] - d.pts[1]) * unitM();
+    const minSide = Math.min(...d.lens);
+    if (gap < Math.max(0.2, minSide * 0.25)) {
+      it.closed = true; it.gap = gap;
+      it.pts = d.pts.slice();
+      save();
+      S.draft = null;
+      toast(`Комната замкнута · S ${fmt(polyArea(it.pts) * unitM() * unitM())} м² · невязка ${fmt(gap)} м`);
+      if (isBlank()) { startBlankDraft(); S.sketchRel = 's'; S.views[S.block] = fitView(blk()); }
+    }
+  }
   draw();
+}
+function polyArea(p) {
+  let A = 0; const n = p.length / 2;
+  for (let i = 0; i < n; i++) { const j = (i + 1) % n; A += p[i * 2] * p[j * 2 + 1] - p[j * 2] * p[i * 2 + 1]; }
+  return Math.abs(A) / 2;
+}
+function polyCentroid(p) {
+  let x = 0, y = 0; const n = p.length / 2;
+  for (let i = 0; i < n; i++) { x += p[i * 2]; y += p[i * 2 + 1]; }
+  return { x: x / n, y: y / n };
 }
 function sketchUndo() {
   const d = S.draft;
@@ -1607,9 +1651,54 @@ function renderBlocks() {
     btn.onclick = () => setBlock(b.name);
     el.appendChild(btn);
   }
+  const add = document.createElement('button');
+  add.textContent = '+'; add.className = 'addSheet'; add.title = 'Новый лист без чертежа';
+  add.onclick = () => newBlankSheet();
+  el.appendChild(add);
+}
+/** Новый пустой лист: комнаты чертятся «направление + метр» */
+function newBlankSheet() {
+  let k = 1;
+  while (S.plan.blocks.some((b) => b.name === 'Лист ' + k)) k++;
+  const name = 'Лист ' + k;
+  const size = 24 / unitM(), h = 16 / unitM();
+  S.plan.blocks.push({ id: 'blank' + Date.now(), name, blank: true, bbox: [0, 0, size, h], polys: [], texts: [] });
+  DB.set('plan', stripPrep(S.plan));
+  setBlock(name);
+  setTool('sketch');
+  startBlankDraft();
+  toast(`${name}: выберите направление и меряйте лазером`);
+}
+function isBlank() { return !!blk().blank; }
+function growBlank(x, y) {
+  const b = blk();
+  if (!b.blank) return;
+  const mg = 2 / unitM();
+  const bb = b.bbox;
+  if (x - mg < bb[0] || x + mg > bb[2] || y - mg < bb[1] || y + mg > bb[3]) {
+    b.bbox = [Math.min(bb[0], x - mg), Math.min(bb[1], y - mg), Math.max(bb[2], x + mg), Math.max(bb[3], y + mg)];
+    delete b._prep;
+    DB.set('plan', stripPrep(S.plan));
+  }
+}
+/** На пустом листе начало линии ставится само — сразу можно мерить */
+function startBlankDraft() {
+  if (!isBlank() || S.draft) return;
+  const b = blk();
+  const has = curItems().filter((i) => i.kind === 'sketch');
+  let x = (b.bbox[0] + b.bbox[2]) / 2, y = (b.bbox[1] + b.bbox[3]) / 2;
+  if (has.length) {
+    // следующая комната — справа от уже начерченных
+    let mx = -Infinity, my = 0;
+    for (const it of has) for (let i = 0; i < it.pts.length; i += 2) { if (it.pts[i] > mx) { mx = it.pts[i]; my = it.pts[i + 1]; } }
+    x = mx + 1 / unitM(); y = my;
+  }
+  S.draft = { kind: 'sketch', pts: [x, y] };
+  S.sketchRel = S.sketchRel || 's';
 }
 function setBlock(name) {
-  S.block = name; S.draft = null; S.selSeg = null; select(null);
+  S.block = name; S.draft = null; S.selSeg = null; S.session = false; select(null);
+  if (S.plan.blocks.find((b) => b.name === name)?.blank) { if (S.tool !== 'sketch') { S.tool = 'sketch'; syncToolUI(); } startBlankDraft(); }
   renderBlocks(); updateDraftBar(); save(); draw();
 }
 /** Копирует обмер (стены, уклоны, двери/окна, эскизы) с этажа from на этаж to, если там пусто */
@@ -1708,7 +1797,7 @@ function setTool(t) {
     select: '',
     point: 'Нажмите на план, где стоите с лазером — появится точка замера',
     line: 'Укажите первую точку размера (привязка к углам)',
-    sketch: 'Нажмите на план — начало линии. Дальше: направление + замер лазером',
+    sketch: S.plan.blocks.find((b) => b.name === S.block)?.blank ? 'Выберите направление и меряйте лазером — комната замкнётся сама' : 'Нажмите на план — начало линии. Дальше: направление + замер лазером',
   }[t]);
   draw();
 }
@@ -1902,7 +1991,7 @@ function buildDxf(allFloors) {
   };
   const floors = allFloors ? floorsWithData() : [S.floor];
   if (!floors.length) floors.push(S.floor);
-  const [bx0, by0, bx1, by1] = b.bbox.map((q) => q * k);
+  const [bx0, by0, bx1, by1] = viewBox(b).map((q) => q * k);
   const bw = bx1 - bx0, bh = by1 - by0;
   const rd = (a) => { if (a > Math.PI / 2) a -= Math.PI; if (a < -Math.PI / 2) a += Math.PI; return a; };
   floors.forEach((fl, fi) => {
@@ -1938,7 +2027,7 @@ function buildDxf(allFloors) {
       w.text(LY.room, cx, cy + 160, 170, String(r.no), 0, 'center');
       w.line(LY.room, cx - 380, cy, cx + 380, cy);
       w.text(LY.room, cx, cy - 190, 190, fmt(r.area), 0, 'center');
-      if (r.ab?.gap != null && r.ab.gap >= 0.005) {
+      if (r.ab?.gap != null && r.ab.gap >= 0.005 && r.ab.gapFrom) {
         const g0 = r.ab.gapFrom, g1 = r.ab.gapTo;
         w.line(LY.gap, X(g0[0]), Y(g0[1]), X(g1[0]), Y(g1[1]));
         w.text(LY.gap, (X(g0[0]) + X(g1[0])) / 2, (Y(g0[1]) + Y(g1[1])) / 2 + 150, 110, `невязка ${fmt(r.ab.gap)} м`, 0, 'center');
@@ -1975,11 +2064,20 @@ function buildDxf(allFloors) {
 /** Сводка по комнатам этажа */
 function roomRows(floor = S.floor) {
   const m = segMapFor(S.block, floor);
-  return wallsOf().rooms.map((room) => {
+  const W = wallsOf();
+  const rows = W.rooms.map((room) => {
     const any = room.segs.some((s) => m.get(s.key)?.value != null);
     const ab = any ? asBuilt(room, (s) => m.get(s.key), unitM()) : null;
     return { room, ab, m };
   });
+  // комнаты, начерченные «направление + метр»
+  let k = 0;
+  for (const it of S.items.filter((i) => i.kind === 'sketch' && i.closed && i.block === S.block && i.floor === floor)) {
+    k++;
+    const c0 = polyCentroid(it.pts), area = polyArea(it.pts) * unitM() * unitM();
+    rows.push({ room: { no: W.rooms.length + k, segs: [], closed: true, area, cx: c0.x, cy: c0.y, sketch: true }, ab: { area, gap: it.gap ?? 0, measured: it.pts.length / 2 - 1, total: it.pts.length / 2 - 1, segPts: [] }, m });
+  }
+  return rows;
 }
 function withFloor(f, fn) { const keep = S.floor; S.floor = f; try { return fn(); } finally { S.floor = keep; } }
 
@@ -2017,7 +2115,14 @@ function floorModel(floor, block = S.block) {
     }
     rooms.push({ no: room.no, cx: room.cx, cy: room.cy, area: ab?.area ?? room.area, areaDesign: room.area, measured: !!ab, closed: room.closed, ab });
   });
+  let skNo = 0;
   for (const it of S.items.filter((i) => i.kind === 'sketch' && i.block === block && i.floor === floor)) {
+    if (it.closed) {
+      skNo++;
+      const c0 = polyCentroid(it.pts);
+      const area = polyArea(it.pts) * unitM() * unitM();
+      rooms.push({ no: (W.rooms.length ? W.rooms.length : 0) + skNo, cx: c0.x, cy: c0.y, area, areaDesign: area, measured: true, closed: true, ab: { gap: it.gap ?? 0, area, measured: 1, total: 1, gapFrom: it.pts.slice(-2), gapTo: it.pts.slice(0, 2) }, sketch: true });
+    }
     for (let i = 0; i + 3 < it.pts.length; i += 2) {
       const ax = it.pts[i], ay = it.pts[i + 1], bx = it.pts[i + 2], by = it.pts[i + 3];
       const L = Math.hypot(bx - ax, by - ay);
@@ -2032,7 +2137,7 @@ function renderPlanCanvas(floor, W, H) {
   const M = floorModel(floor, block);
   if (!W) {
     // книжная ориентация для «высоких» блоков, альбомная — для широких
-    const [x0, y0, x1, y1] = M.b.bbox;
+    const [x0, y0, x1, y1] = viewBox(M.b);
     const tall = (y1 - y0) > (x1 - x0) * 0.85;
     W = tall ? 2480 : 3508; H = tall ? 3508 : 2480;
   }
@@ -2304,6 +2409,9 @@ async function renderDocs() {
   }
 }
 async function shareKind(kind, mode) {
+  try { await shareKindInner(kind, mode); } catch (e) { busy(false); console.error(e); notice('Не удалось сформировать файл: ' + (e.message || e)); }
+}
+async function shareKindInner(kind, mode) {
   busy(true, 'Готовлю файл…');
   await new Promise((r) => setTimeout(r, 30));
   let name, blob;
@@ -2378,6 +2486,8 @@ async function loadPlanFile(file) {
 }
 function stripPrep(plan) { return { ...plan, blocks: plan.blocks.map(({ _prep, ...b }) => b) }; }
 function setPlan(plan) {
+  const blanks = (S.plan?.blocks || []).filter((b) => b.blank && !plan.blocks.some((x) => x.name === b.name));
+  plan.blocks.push(...blanks);
   S.plan = plan; S.views = {};
   if (!plan.blocks.find((b) => b.name === S.block)) S.block = plan.blocks[0].name;
   renderBlocks(); renderPlanInfo(); draw();
@@ -2395,8 +2505,20 @@ function renderPlanInfo() {
       if (S.block === b.name) S.block = nn;
       b.name = nn; renderBlocks(); save(); await DB.set('plan', stripPrep(S.plan)); draw();
     };
-    const n = S.items.filter((i) => i.block === b.name && i.kind !== 'sketch').length;
-    row.append(inp, Object.assign(document.createElement('span'), { className: 'muted small', textContent: `замеров: ${n}` }));
+    const n = S.items.filter((i) => i.block === b.name).length;
+    row.append(inp, Object.assign(document.createElement('span'), { className: 'muted small', textContent: (b.blank ? 'лист · ' : '') + `замеров: ${n}` }));
+    if (b.blank) {
+      const del = document.createElement('button'); del.className = 'btn danger'; del.textContent = 'Удалить лист'; del.style.height = '36px';
+      del.onclick = async () => {
+        if (!(await ask(`Удалить «${b.name}» вместе с его замерами?`, 'Удалить', true))) return;
+        pushUndo();
+        S.items = S.items.filter((i) => i.block !== b.name);
+        S.plan.blocks = S.plan.blocks.filter((x) => x !== b);
+        if (S.block === b.name) S.block = S.plan.blocks[0].name;
+        await DB.set('plan', stripPrep(S.plan)); save(); renderBlocks(); renderPlanInfo(); draw();
+      };
+      row.append(del);
+    }
     el.appendChild(row);
   });
 }

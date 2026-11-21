@@ -348,3 +348,4 @@ body.focus .focusExit {
   top: calc(8px + var(--safeT)); right: 8px; width: 34px; height: 34px; border-radius: 10px;
   background: rgba(20,33,61,.35); color: #fff; opacity: .6;
 }
+.blocks button.addSheet { background: rgba(255,255,255,.18); color: #fff; font-size: 22px; font-weight: 600; min-width: 40px; }
