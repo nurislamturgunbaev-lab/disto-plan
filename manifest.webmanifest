@@ -1,6 +1,6 @@
 {
-  "name": "DISTO · План замеров",
-  "short_name": "DISTO План",
+  "name": "План замеров",
+  "short_name": "План замеров",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

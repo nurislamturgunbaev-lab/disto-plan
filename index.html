@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#14213d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>DISTO · План</title>
+<title>План замеров</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -17,13 +17,10 @@
   <header class="top">
     <div class="brand" id="btnMenu" role="button" aria-label="Меню">
       <svg viewBox="0 0 24 24" width="22" height="22"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      <span>DISTO<b>·</b>План</span>
+      <span>План<b>·</b>замеров</span>
     </div>
     <div class="blocks" id="blocks"></div>
     <button class="toolBtn" id="btnTools" aria-label="Инструменты"><span id="toolIcon"></span><b id="toolName">Стены</b><i>▾</i></button>
-    <button class="disto" id="btnDisto" hidden data-state="off" aria-label="Подключить DISTO">
-      <i class="dot"></i><span id="distoLabel">DISTO</span>
-    </button>
   </header>
 
   <div class="toolsPop" id="toolsPop" hidden>
@@ -66,7 +63,7 @@
     <div class="prog" id="prog" hidden></div>
     <div class="hud">
       <div class="last" id="lastBox" hidden>
-        <small id="lastSrc">DISTO</small>
+        <small id="lastSrc">лазер</small>
         <b id="lastVal">0,00</b><span>м</span>
       </div>
     </div>
@@ -150,6 +147,24 @@
 
 
   <footer class="bottom">
+    <div class="mbar" id="mbar" hidden>
+      <div class="mInfo"><span id="mTitle"></span><b id="mVal">?</b></div>
+      <div class="mRow">
+        <div class="mDir">
+          <button data-r="l" title="Налево" aria-label="Налево"><svg viewBox="0 0 24 24"><path d="M18 20v-7a3 3 0 00-3-3H6m4-4l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button data-r="s" title="Прямо" aria-label="Прямо"><svg viewBox="0 0 24 24"><path d="M12 20V5m-5 5l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button data-r="r" title="Направо" aria-label="Направо"><svg viewBox="0 0 24 24"><path d="M6 20v-7a3 3 0 013-3h9m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+        <div class="mTools">
+          <button id="mUndo" title="Отменить" aria-label="Отменить"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button id="mPrev" title="Предыдущая стена" aria-label="Предыдущая"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button id="mNext" title="Пропустить" aria-label="Пропустить"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button id="mMerge" title="Удалить поворот" aria-label="Удалить поворот"><svg viewBox="0 0 24 24"><path d="M3 15h6v-6h6v6h6" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"/><path d="M3 19h18" stroke="currentColor" stroke-width="2.4"/></svg></button>
+          <button id="mMore" title="Подробнее" aria-label="Подробнее"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg></button>
+          <button id="mStop" class="stop" title="Стоп" aria-label="Стоп"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg></button>
+        </div>
+      </div>
+    </div>
     <form class="entry" id="entryForm" autocomplete="off">
       <button type="button" class="undo" id="btnUndo" aria-label="Отменить"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <input id="entry" inputmode="decimal" enterkeyhint="done" placeholder="Замер вручную, м — напр. 2,85">
@@ -219,9 +234,8 @@
       <button class="btn danger" id="btnClear">Удалить все замеры</button>
     </div>
 
-    <h3>Leica DISTO</h3>
+    <h3>Лазер</h3>
     <div class="muted small" id="distoHelp"></div>
-    <details><summary>Журнал Bluetooth</summary><pre id="distoLog"></pre></details>
     <p class="muted small">Версия <span id="ver"></span></p>
   </div>
 </div>

@@ -308,3 +308,23 @@ tr.clk:active { background: var(--bg); }
 .sheet.compact { gap: 8px; padding-top: 10px; }
 .sheet.compact .sheetTitle { font-size: 16px; }
 .disto { display: none !important; }
+
+/* компактная панель замера (внизу, вместо большой карточки) */
+.mbar { padding: 6px 8px 0; display: flex; flex-direction: column; gap: 5px; }
+.mInfo { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink2); padding: 0 2px; }
+.mInfo span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mInfo b { font-size: 18px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.mRow { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
+.mTools, .mDir { display: flex; gap: 4px; }
+.mTools button, .mDir button {
+  width: 34px; height: 34px; border-radius: 9px; background: var(--bg); color: var(--ink);
+  display: grid; place-items: center; border: 1px solid var(--line); touch-action: manipulation;
+}
+.mTools button svg, .mDir button svg { width: 18px; height: 18px; }
+.mTools button:active, .mDir button:active { transform: scale(.92); }
+.mTools .stop { color: var(--bad); }
+.mDir button { width: 40px; }
+.mDir button.on { background: var(--accent2); color: #fff; border-color: transparent; }
+.mbar:not([hidden]) + .entry { padding-top: 5px; }
+.mbar:not([hidden]) + .entry input, .mbar:not([hidden]) + .entry button { height: 38px; }
+.mbar:not([hidden]) + .entry .undo { display: none; }

@@ -5,7 +5,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne } from './zip.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
 
@@ -67,6 +67,7 @@ const S = {
   selSeg: null, // ключ выбранной стены
   session: false,
   sketchDir: null,
+  sketchRel: 's',
   sheetFull: false,
   openType: 'door',
   items: [],
@@ -159,7 +160,7 @@ function onMeasure(meters, src) {
   const lb = $('lastBox');
   lb.hidden = false;
   $('lastVal').textContent = fmt(meters);
-  $('lastSrc').textContent = src === 'manual' ? 'вручную' : 'DISTO';
+  $('lastSrc').textContent = src === 'manual' ? 'вручную' : 'лазер';
   lb.classList.remove('flash'); void lb.offsetWidth; lb.classList.add('flash');
 
   let target = null;
@@ -167,7 +168,6 @@ function onMeasure(meters, src) {
   if (S.armedId) target = S.items.find((i) => i.id === S.armedId);
   if (S.tool === 'sketch') {
     if (!S.draft || !S.draft.pts.length) { toast(`${fmt(meters)} м — сначала нажмите на план (начало линии)`); return; }
-    if (!S.sketchDir) { toast(`${fmt(meters)} м — выберите направление стрелкой слева`); return; }
     sketchAppend(meters, src);
     return;
   }
@@ -480,7 +480,7 @@ function draw() {
   scaleBar(ctx, v, pal);
   if (S.selSeg || curItems().some((i) => i.value == null && i.kind === 'point')) requestDraw();
   updateProgress();
-  syncDpad();
+  syncMbar();
 }
 let raf = 0;
 function requestDraw() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
@@ -760,9 +760,9 @@ function tap(p) {
     selectSeg(sg.key);
     ask(`Начинаем замер?\nКомната ${sg.room}, стена ${sg.wall} из ${sg.of}. Замеры с лазера будут записываться автоматически, стена за стеной, затем соседние комнаты.`, 'Да, начать').then((yes) => {
       if (!yes) return;
-      S.session = true; S.settings.autoNext = true;
+      S.session = true; S.settings.autoNext = true; S.sheetFull = false;
       refreshSheet(); draw();
-      hint('Замер начат — нажимайте кнопку на DISTO');
+      hint('Замер начат — меряйте лазером');
     });
     return;
   }
@@ -783,7 +783,7 @@ function tap(p) {
   if (S.tool === 'point') {
     const it = addItem({ kind: 'point', x: w.x, y: w.y });
     select(it.id);
-    hint('Точка №' + it.no + ' ждёт замер — нажмите кнопку на DISTO или введите значение');
+    hint('Точка №' + it.no + ' ждёт замер — измерьте лазером или введите значение');
   } else if (S.tool === 'line') {
     if (!S.draft) { S.draft = { kind: 'line', pts: [w.x, w.y] }; hint('Укажите вторую точку размера'); }
     else {
@@ -805,7 +805,7 @@ function tap(p) {
     }
     d.pts.push(w.x, w.y);
     if (d.itemId) { const it = S.items.find((i) => i.id === d.itemId); if (it) { it.pts = d.pts.slice(); save(); } }
-    hint('Ставьте точки линии. «Готово» — завершить, нажатие на первую точку — замкнуть');
+    hint('Направление + замер лазером. ■ — завершить линию, нажатие на первую точку — замкнуть');
   }
   updateDraftBar();
 }
@@ -813,7 +813,7 @@ function tap(p) {
 function sketchAppend(meters, src) {
   const d = S.draft;
   const n = d.pts.length;
-  const a = (DIR_DEG[S.sketchDir] * Math.PI) / 180, L = meters / unitM();
+  const a = ((sketchLastDir() + REL[S.sketchRel || 's']) * Math.PI) / 180, L = meters / unitM();
   d.pts.push(d.pts[n - 2] + Math.cos(a) * L, d.pts[n - 1] + Math.sin(a) * L);
   d.lens = d.lens || []; d.lens.push(meters);
   let it = d.itemId && S.items.find((i) => i.id === d.itemId);
@@ -824,7 +824,7 @@ function sketchAppend(meters, src) {
   }
   it.pts = d.pts.slice(); it.lens = d.lens.slice();
   save(); feedback();
-  toast(`${fmt(meters)} м ${{ r: '→', u: '↑', l: '←', d: '↓' }[S.sketchDir]}`);
+  toast(`${fmt(meters)} м · ${{ l: 'налево', s: 'прямо', r: 'направо' }[S.sketchRel || 's']}`);
   draw();
 }
 function sketchUndo() {
@@ -852,7 +852,7 @@ function finishSketch(closed = false) {
   updateDraftBar(); hint(''); draw();
 }
 function updateDraftBar() {
-  $('draftbar').hidden = !(S.draft && S.draft.kind === 'sketch');
+  $('draftbar').hidden = true; // управление линией — в нижней панели
 }
 
 /* ---------- выбор и карточка ---------- */
@@ -868,7 +868,8 @@ function refreshSheet() {
   $('shNav').hidden = !S.selSeg;
   if (!S.selSeg) { $('shNav2').hidden = true; $('sheet').classList.remove('compact'); $('shSub').hidden = false; $('shDesignWrap').hidden = false; }
   if (S.selSeg) $('shOpen').hidden = true;
-  if (S.selSeg) { sh.hidden = false; refreshSegSheet(); return; }
+  if (S.selSeg && S.session && !S.sheetFull) { sh.hidden = true; syncMbar(); return; }
+  if (S.selSeg) { sh.hidden = false; refreshSegSheet(); syncMbar(); return; }
   const it = S.items.find((i) => i.id === S.selId);
   if (!it) { sh.hidden = true; return; }
   sh.hidden = false;
@@ -890,7 +891,7 @@ function refreshSheet() {
     ? `Блок ${it.block} · этаж ${it.floor} · ${it.pts.length / 2} точек`
     : `Блок ${it.block} · ${it.kind === 'point' ? `с ${it.floor} эт. ${it.dir === 'up' ? 'вверх' : 'вниз'}${it.toFloor != null ? ' до ' + it.toFloor + ' эт.' : ''}` : 'этаж ' + it.floor}` +
       (it.mt ? ' · ' + new Date(it.mt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '') +
-      (it.src === 'manual' ? ' · вручную' : it.src ? ' · DISTO' : '');
+      (it.src === 'manual' ? ' · вручную' : it.src ? ' · лазер' : '');
   for (const el of sh.querySelectorAll('.grid2, #shDev, #shRemeasure')) el.hidden = isSk;
   $('shSlope').hidden = true; $('shRoom').hidden = true; $('shOpen').hidden = true;
   $('shFloorRow').hidden = isSk || it.kind === 'line';
@@ -907,7 +908,7 @@ function refreshSheet() {
   dv.textContent = cls ? `Отклонение ${fmtSigned(it.value - it.design)} м от проекта` : '';
   const rb = $('shRemeasure');
   rb.classList.toggle('armed', S.armedId === it.id);
-  rb.textContent = S.armedId === it.id ? '◎ Ждёт замер с DISTO…' : '◎ Перемерить';
+  rb.textContent = S.armedId === it.id ? '◎ Ждёт замер…' : '◎ Перемерить';
 }
 function bindSheet() {
   const cur = () => (S.selSeg ? segItem(S.selSeg, true) : S.items.find((i) => i.id === S.selId));
@@ -952,7 +953,7 @@ function bindSheet() {
     if (!(await ask(txt, 'Удалить поворот'))) return;
     mergeTurn(S.selSeg); gotoSeg(1, true);
   };
-  $('shMore').onclick = () => { S.sheetFull = !S.sheetFull; refreshSheet(); syncDpad(); };
+  $('shMore').onclick = () => { S.sheetFull = !S.sheetFull; refreshSheet(); };
   for (const b of $('dpad').querySelectorAll('[data-d]')) b.onclick = () => onDpad(b.dataset.d);
   $('dpadC').onclick = () => {
     if (S.tool === 'sketch' && S.draft) { sketchUndo(); return; }
@@ -980,7 +981,7 @@ function bindSheet() {
     const it = cur(); if (!it) return;
     S.armedId = S.armedId === it.id ? null : it.id;
     refreshSheet();
-    if (S.armedId) hint('Нажмите кнопку на DISTO — значение запишется в №' + it.no);
+    if (S.armedId) hint('Измерьте лазером — значение запишется в №' + it.no);
   };
 }
 
@@ -1252,7 +1253,7 @@ function refreshSegSheet() {
   $('shMore').hidden = !S.session;
   $('shTitle').textContent = `Комната ${sg.room} · стена ${sg.wall} из ${sg.of}` + (compact ? ` · черт. ${fmt(sg.len)}` : '');
   $('shSub').textContent = `Блок ${S.block} · этаж ${S.floor} · по чертежу ${fmt(sg.len)} м` +
-    (it?.mt ? ' · ' + new Date(it.mt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + (it.src === 'manual' ? ' · вручную' : ' · DISTO') : '');
+    (it?.mt ? ' · ' + new Date(it.mt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + (it.src === 'manual' ? ' · вручную' : ' · лазер') : '');
   for (const el of document.querySelectorAll('#sheet .grid2, #shDev')) el.hidden = false;
   $('shFloorRow').hidden = true;
   $('shActions').hidden = true;
@@ -1269,7 +1270,7 @@ function refreshSegSheet() {
   const dv = $('shDev');
   const cls = it ? devClass(it) : null;
   dv.className = 'dev ' + (cls || '');
-  dv.textContent = it?.copied ? `Значение взято с ${it.copied.from} этажа — перемерьте стену` : cls ? `Отклонение ${fmtSigned(it.value - it.design)} м от чертежа` : 'Измерьте DISTO или введите значение. Кривая стена — потяните ⟳ на конце';
+  dv.textContent = it?.copied ? `Значение взято с ${it.copied.from} этажа — перемерьте стену` : cls ? `Отклонение ${fmtSigned(it.value - it.design)} м от чертежа` : 'Измерьте лазером или введите значение. Кривая стена — потяните ⟳ на конце';
   if (it?.copied) dv.className = 'dev warn';
   if (it?.merged) { dv.className = 'dev'; dv.textContent = 'Поворот удалён — стена ровная. «✕» — вернуть.'; }
   const room = W.rooms.find((r) => r.no === sg.room);
@@ -1458,8 +1459,8 @@ function onDpad(d) {
     save(); refreshSheet(); draw();
   } else if (S.tool === 'sketch') {
     S.sketchDir = d;
-    if (!S.draft) hint('Нажмите на план — начало линии, затем измерьте DISTO');
-    else hint('Направление выбрано — измерьте DISTO');
+    if (!S.draft) hint('Нажмите на план — начало линии, затем измерьте лазером');
+    else hint('Направление выбрано — измерьте лазером');
   }
   syncDpad();
 }
@@ -1506,6 +1507,94 @@ function maybeAskTurn() {
     askingTurn = false;
     if (yes) { mergeTurn(S.selSeg); gotoSeg(1, true); }
   });
+}
+/* ---------- компактная панель замера: налево / прямо / направо ---------- */
+const REL = { l: 90, s: 0, r: -90 };
+/** Направление предыдущей стены (по обмеру) — относительно него «налево/прямо/направо» */
+function wallBaseDir(sg) {
+  const W = wallsOf();
+  const room = W.rooms.find((r) => r.no === sg.room);
+  const ab = roomAsBuilt(room);
+  const i = ab.segPts.findIndex((q) => q.seg.key === sg.key);
+  const prev = i > 0 ? ab.segPts[i - 1] : room.closed ? ab.segPts[ab.segPts.length - 1] : null;
+  if (prev && prev !== ab.segPts[i] && Math.hypot(prev.ex - prev.sx, prev.ey - prev.sy) > 1e-9) {
+    return (Math.atan2(prev.ey - prev.sy, prev.ex - prev.sx) * 180) / Math.PI;
+  }
+  return (Math.atan2(sg.by - sg.ay, sg.bx - sg.ax) * 180) / Math.PI;
+}
+function wallCurDir(sg) {
+  const it = segItem(sg.key);
+  return (Math.atan2(sg.by - sg.ay, sg.bx - sg.ax) * 180) / Math.PI + (it?.ang || 0);
+}
+function relOf(diff) {
+  diff = normDeg(diff);
+  for (const [k, v] of Object.entries(REL)) if (Math.abs(normDeg(diff - v)) < 20) return k;
+  return null;
+}
+function sketchLastDir() {
+  const p = S.draft?.pts;
+  if (!p || p.length < 4) return 90; // первая линия: «прямо» = вверх по экрану
+  const n = p.length;
+  return (Math.atan2(p[n - 1] - p[n - 3], p[n - 2] - p[n - 4]) * 180) / Math.PI;
+}
+function onRel(r) {
+  if (S.tool === 'sketch') {
+    S.sketchRel = r;
+    if (!S.draft) hint('Нажмите на план — начало линии');
+  } else if (S.selSeg) {
+    const sg = wallsOf().byKey.get(S.selSeg);
+    const target = wallBaseDir(sg) + REL[r];
+    const design = (Math.atan2(sg.by - sg.ay, sg.bx - sg.ax) * 180) / Math.PI;
+    pushUndo();
+    const it = segItem(S.selSeg, true);
+    let a = Math.round(normDeg(target - design) * 10) / 10;
+    if (Math.abs(a) < 0.05) a = 0;
+    it.ang = a;
+    save(); draw();
+  }
+  syncMbar();
+}
+function mbarMode() {
+  if (S.tool === 'sketch') return 'sketch';
+  if (S.tool === 'walls' && S.selSeg && S.session) return 'walls';
+  return null;
+}
+function syncMbar() {
+  const mode = mbarMode();
+  const mb = $('mbar');
+  mb.hidden = !mode;
+  $('dpad').hidden = true;
+  if (!mode) return;
+  const isW = mode === 'walls';
+  for (const id of ['mPrev', 'mNext', 'mMerge', 'mMore']) $(id).hidden = !isW;
+  let on = null;
+  if (isW) {
+    const sg = wallsOf().byKey.get(S.selSeg);
+    if (!sg) return;
+    const it = segItem(S.selSeg);
+    $('mTitle').textContent = `К${sg.room} · стена ${sg.wall}/${sg.of} · черт. ${fmt(sg.len)}` + (it?.copied ? ` · с ${it.copied.from} эт.` : '') + (it?.merged ? ' · поворот удалён' : '');
+    $('mVal').textContent = it?.value != null && !it.merged ? fmt(it.value) + ' м' : '?';
+    on = relOf(wallCurDir(sg) - wallBaseDir(sg));
+  } else {
+    const n = S.draft ? S.draft.pts.length / 2 : 0;
+    $('mTitle').textContent = n ? `Линия · отрезков ${Math.max(0, n - 1)}` : 'Нажмите на план — начало линии';
+    const l = S.draft?.lens?.length ? S.draft.lens[S.draft.lens.length - 1] : null;
+    $('mVal').textContent = l != null ? fmt(l) + ' м' : '';
+    on = S.sketchRel;
+  }
+  for (const b of $('mbar').querySelectorAll('[data-r]')) b.classList.toggle('on', b.dataset.r === on);
+}
+function bindMbar() {
+  for (const b of $('mbar').querySelectorAll('[data-r]')) b.onclick = () => onRel(b.dataset.r);
+  $('mUndo').onclick = () => (S.tool === 'sketch' && S.draft ? sketchUndo() : doUndo());
+  $('mPrev').onclick = () => gotoSeg(-1);
+  $('mNext').onclick = () => gotoSeg(1, true);
+  $('mMerge').onclick = () => $('shMerge').click();
+  $('mMore').onclick = () => { S.sheetFull = true; refreshSheet(); };
+  $('mStop').onclick = () => {
+    if (S.tool === 'sketch') { finishSketch(false); setTool('walls'); return; }
+    S.session = false; S.sheetFull = false; hint('Замер остановлен'); refreshSheet(); draw();
+  };
 }
 /* ---------- верхняя панель ---------- */
 function renderBlocks() {
@@ -1613,9 +1702,9 @@ function setTool(t) {
     walls: 'Нажмите на стену — начнём замер',
     open: 'Выберите «Дверь» или «Окно» и нажмите на стену',
     select: '',
-    point: 'Нажмите на план, где стоите с DISTO — появится точка замера',
+    point: 'Нажмите на план, где стоите с лазером — появится точка замера',
     line: 'Укажите первую точку размера (привязка к углам)',
-    sketch: 'Нажмите на план — начало линии. Дальше: стрелка слева + замер DISTO',
+    sketch: 'Нажмите на план — начало линии. Дальше: направление + замер лазером',
   }[t]);
   draw();
 }
@@ -1752,7 +1841,7 @@ function buildCsv() {
     const pt = i.kind === 'point';
     lines.push([i.block, i.floor, itemNo(i), i.kind === 'seg' ? 'стена' : i.kind === 'line' ? 'размер' : 'точка', pt ? (i.dir === 'up' ? 'вверх' : 'вниз') : '',
       pt ? i.toFloor ?? '' : '', i.value == null ? '' : fmt(i.value), i.design == null ? '' : fmt(i.design),
-      d == null ? '' : fmt(d), i.ang ? i.ang.toFixed(1).replace('.', ',') : '', i.src === 'manual' ? 'вручную' : i.src ? 'DISTO' : '',
+      d == null ? '' : fmt(d), i.ang ? i.ang.toFixed(1).replace('.', ',') : '', i.src === 'manual' ? 'вручную' : i.src ? 'лазер' : '',
       i.mt ? new Date(i.mt).toLocaleString('ru-RU') : '', i.note || ''].map(q).join(';'));
   }
   return new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' });
@@ -2244,7 +2333,7 @@ const disto = new Disto();
 function bindDisto() {
   const btn = $('btnDisto');
   const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-  $('distoHelp').innerHTML = 'DISTO подключается к телефону по Bluetooth как клавиатура. Нажмите кнопку измерения на приборе — число само запишется в выбранную стену (поле ввода трогать не нужно, русская раскладка тоже подходит: «ю» читается как запятая).';
+  $('distoHelp').innerHTML = 'Лазерный дальномер подключается к телефону по Bluetooth как клавиатура. Нажмите кнопку измерения на приборе — число само запишется в выбранную стену (поле ввода трогать не нужно, русская раскладка тоже подходит: «ю» читается как запятая).';
   btn.onclick = async () => {
     if (disto.state === 'on') {
       if (await ask('Отключить ' + (disto.device?.name || 'DISTO') + '?', 'Отключить')) disto.disconnect();
@@ -2421,7 +2510,8 @@ async function init() {
   $('draftDone').onclick = () => finishSketch(false);
   $('draftUndo').onclick = () => sketchUndo();
   $('draftCancel').onclick = () => { S.draft = null; updateDraftBar(); hint(''); draw(); };
-  bindSheet(); bindEntry(); bindMenu(); bindDisto(); bindTools();
+  bindSheet(); bindEntry(); bindMenu(); bindTools(); bindMbar();
+  $('distoHelp').textContent = 'Лазерный дальномер подключается к телефону по Bluetooth как клавиатура. Нажмите кнопку измерения на приборе — число само запишется в выбранную стену. Русская раскладка тоже подходит: «ю» читается как запятая.';
   new ResizeObserver(resize).observe(cv);
   resize();
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
