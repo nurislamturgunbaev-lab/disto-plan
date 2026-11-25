@@ -495,7 +495,6 @@ body.focus .mini { top: calc(10px + var(--safeT)); }
 .openPad .edl[hidden], .openPad .doneBtn[hidden] { display: none; }
 .mTools .edl { color: var(--accent2); }
 @media (orientation: landscape) and (max-height: 540px) {
-  body.focus .openPad:not([hidden]) { gap: 5px; display: grid; grid-template-columns: repeat(2, 42px); grid-auto-flow: row; }
   body.focus .openPad button { width: 42px; height: 40px; }
   body.focus .openPad .doneBtn { height: 46px; }
 }
@@ -526,7 +525,15 @@ body:has(.modal:not([hidden])) .toast { opacity: 0; }
 @media (orientation: portrait) {
   body.focus .openPad:not([hidden]) { top: calc(100px + var(--safeT)); }
 }
-@media (orientation: portrait) and (max-height: 860px) {
-  body.focus .openPad:not([hidden]) { display: grid; grid-template-columns: repeat(2, 48px); gap: 7px; }
-}
+
 #dirSeg[hidden], #toFloorChip[hidden] { display: none !important; }
+
+/* правый пульт полного экрана — всегда одной колонкой; кнопки сжимаются под высоту экрана */
+body.focus .openPad:not([hidden]) { display: flex; flex-direction: column; gap: 5px; --b: clamp(32px, calc((100dvh - var(--safeT) - 150px) / 10 - 5px), 46px); }
+body.focus .openPad button { width: var(--b); height: var(--b); border-radius: 12px; }
+body.focus .openPad button svg { width: calc(var(--b) * .48); height: calc(var(--b) * .48); }
+body.focus .openPad .doneBtn { height: calc(var(--b) + 8px); }
+@media (orientation: landscape) and (max-height: 540px) {
+  body.focus .openPad:not([hidden]) { top: calc(52px + var(--safeT)); transform: none; gap: 4px; --b: clamp(26px, calc((100dvh - 60px) / 10 - 4px), 40px); }
+  body.focus .openPad small { display: none; }
+}
