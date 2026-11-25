@@ -546,6 +546,6 @@ body.focus .openPad .doneBtn { height: calc(var(--b) + 8px); }
   .dirPad .dRow button, .dirPad .laserBtn { height: 40px !important; }
 }
 
-.dirPad .gyroOrtho { order: -1; }
+.dirPad .gyroOrtho { order: -2; }
 .dirPad .gyroOrtho[hidden] { display: none; }
 .dirPad .gyroOrtho.on { background: var(--accent2); color: #fff; }

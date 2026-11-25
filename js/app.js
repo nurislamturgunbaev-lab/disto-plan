@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.6.1';
+const VERSION = '2.6.2';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -2121,7 +2121,6 @@ async function toggleGyro() {
 }
 function syncGyroBtn() {
   $('gyroBtn').classList.toggle('on', GYRO.on);
-  $('gyroOrtho').hidden = !GYRO.on;
   $('gyroOrtho').classList.toggle('on', !!S.settings.ortho);
 }
 /** Направление следующей линии по повороту телефона от прошлой стены (округление 90°, с «УГОЛ» — 5°) */
