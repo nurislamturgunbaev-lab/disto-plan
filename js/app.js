@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.6.3';
+const VERSION = '2.7.0';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -74,7 +74,7 @@ const S = {
   selId: null,
   armedId: null,
   draft: null, // {kind:'line'|'sketch', pts:[]}
-  settings: { floorH: 0, theme: 'light', otherFloors: false, snap: true, beep: true, autoNext: true, wallMin: 0.15, wallColumns: false, wallLabels: true, ortho: false, snapModes: { end: true, mid: true, perp: true, near: false },
+  settings: { floorH: 0, theme: 'light', otherFloors: false, snap: true, beep: true, autoNext: true, wallMin: 0.15, wallColumns: false, wallLabels: true, ortho: false, snapModes: { end: true, mid: true, int: true, perp: true, near: false, ext: false, par: true, track: true, equal: true },
     polar: false, rotate: false, laserRef: 'back', laserOffset: 0.13, wallTh: 0, btnPos: {},
     layers: { drawing: true, shadow: true, dims: true, areas: true, openings: true, thick: true, hatch: false, text: false, redoBtn: true, roomOps: false, mini: true, shadowDims: false } },
   views: {},
@@ -674,27 +674,56 @@ function snapSegments() {
   }
   return [P.segFlat, extra];
 }
-/** sx,sy — экранная точка; from — предыдущая точка (мир) для «Нормали» и «Орто»; skipId — не привязываться к себе */
+/* ---------- привязка как в AutoCAD ---------- */
+const SNAP_DEF = { end: true, mid: true, int: true, perp: true, near: false, ext: false, par: true, track: true, equal: true };
+const SNAP_NAMES = {
+  end: 'Конточка', mid: 'Середина', int: 'Пересечение', perp: 'Нормаль', near: 'Ближайшая', ext: 'Продолжение',
+  par: 'Параллель', track: 'Отслеживание', equal: 'Равная длина', ortho: 'Орто',
+};
+const SNAP_HELP = {
+  end: 'углы и концы линий', mid: 'середина стены', int: 'где пересекаются две линии', perp: 'под прямым углом к стене',
+  near: 'любая точка на линии', ext: 'на продолжении стены', par: 'линия параллельна стене рядом',
+  track: 'выравнивание по углам: пунктир по горизонтали/вертикали', equal: 'длина как у другой стены — «= 3,60»',
+};
+const snapModes = () => ({ ...SNAP_DEF, ...(S.settings.snapModes || {}) });
+/** Углы начерченных комнат и линий — для отслеживания */
+function trackPoints() {
+  const pts = [];
+  for (const it of curItems()) {
+    if (it.kind === 'line') pts.push(it.x, it.y, it.x2, it.y2);
+    else if (it.kind === 'sketch' && it.pts) pts.push(...it.pts);
+  }
+  return pts;
+}
+/** sx,sy — экранная точка; from — предыдущая точка (мир) для «Нормали», «Орто», «Параллели», длины */
 function snap(sx, sy, from) {
   const v = V();
   let w = screenToWorld(sx, sy, v);
   snapMark = null;
-  const M = S.settings.snapModes;
-  const R = (lastPtrType === 'mouse' ? 16 : 26) / v.s; // пальцем — зона привязки больше
-  if (S.settings.snap) {
+  const M = snapModes();
+  const R = (lastPtrType === 'mouse' ? 16 : 26) / v.s;
+  const on = !!S.settings.snap;
+  const segs = on ? snapSegments() : [];
+  if (on) {
     let best = null, bd = R, rank = 9;
-    const cand = (x, y, type, rk) => {
+    const cand = (x, y, type, rk, extra) => {
       const d = Math.hypot(x - w.x, y - w.y);
-      if (d <= R && (rk < rank || (rk === rank && d < bd))) { best = { x, y, type }; bd = d; rank = rk; }
+      if (d <= R && (rk < rank || (rk === rank && d < bd))) { best = { x, y, type, ...extra }; bd = d; rank = rk; }
     };
-    for (const arr of snapSegments()) {
+    const near = [];
+    for (const arr of segs) {
       for (let i = 0; i < arr.length; i += 4) {
         const ax = arr[i], ay = arr[i + 1], bx = arr[i + 2], by = arr[i + 3];
-        // быстрый отсев
+        const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+        if (M.ext && L2) {
+          // продолжение стены: точка на прямой за концом стены
+          const t = ((w.x - ax) * dx + (w.y - ay) * dy) / L2;
+          if (t > 1 || t < 0) { const px = ax + t * dx, py = ay + t * dy; cand(px, py, 'ext', 4, { line: t > 1 ? [bx, by, px, py] : [ax, ay, px, py] }); }
+        }
         if (Math.min(ax, bx) - R > w.x || Math.max(ax, bx) + R < w.x || Math.min(ay, by) - R > w.y || Math.max(ay, by) + R < w.y) continue;
+        near.push([ax, ay, bx, by]);
         if (M.end) { cand(ax, ay, 'end', 0); cand(bx, by, 'end', 0); }
         if (M.mid) cand((ax + bx) / 2, (ay + by) / 2, 'mid', 1);
-        const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
         if (!L2) continue;
         if (M.perp && from) {
           const t = ((from.x - ax) * dx + (from.y - ay) * dy) / L2;
@@ -702,57 +731,161 @@ function snap(sx, sy, from) {
         }
         if (M.near) {
           let t = ((w.x - ax) * dx + (w.y - ay) * dy) / L2; t = Math.max(0, Math.min(1, t));
-          cand(ax + t * dx, ay + t * dy, 'near', 3);
+          cand(ax + t * dx, ay + t * dy, 'near', 5);
         }
+      }
+    }
+    if (M.int) {
+      // пересечения линий рядом с пальцем
+      for (let a = 0; a < near.length && a < 60; a++) for (let b = a + 1; b < near.length && b < 60; b++) {
+        const [x1, y1, x2, y2] = near[a], [x3, y3, x4, y4] = near[b];
+        const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den, u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / den;
+        if (t > 0.001 && t < 0.999 && u > 0.001 && u < 0.999) cand(x1 + t * (x2 - x1), y1 + t * (y2 - y1), 'int', 0);
       }
     }
     if (best) { snapMark = best; return { x: best.x, y: best.y }; }
   }
-  if (S.settings.polar && from) {
-    // полярные углы: шаг 5°, линия слежения
-    const dx = w.x - from.x, dy = w.y - from.y, L = Math.hypot(dx, dy);
-    if (L > 0) {
-      const a = Math.round((Math.atan2(dy, dx) * 180) / Math.PI / 5) * 5, r = (a * Math.PI) / 180;
-      const d = dx * Math.cos(r) + dy * Math.sin(r);
-      w = { x: from.x + Math.cos(r) * d, y: from.y + Math.sin(r) * d };
-      snapMark = { x: w.x, y: w.y, type: 'polar', from, ang: ((a % 360) + 360) % 360 };
+  if (!from) return w;
+  const lines = []; // подсказки: [ax,ay,bx,by,'track'|'ref']
+  let ux = null, uy = null, dirType = null;
+  // направление: полярные углы / орто / параллель
+  const dx0 = w.x - from.x, dy0 = w.y - from.y, L0 = Math.hypot(dx0, dy0);
+  if (S.settings.polar && L0 > 0) {
+    const a = Math.round((Math.atan2(dy0, dx0) * 180) / Math.PI / 5) * 5, r = (a * Math.PI) / 180;
+    ux = Math.cos(r); uy = Math.sin(r); dirType = 'polar';
+  } else if (S.settings.ortho && L0 > 0) {
+    if (Math.abs(dx0) >= Math.abs(dy0)) { ux = Math.sign(dx0) || 1; uy = 0; } else { ux = 0; uy = Math.sign(dy0) || 1; }
+    dirType = 'ortho';
+  } else if (on && M.par && L0 * v.s > 24) {
+    const ang = Math.atan2(dy0, dx0);
+    let bestD = (3 * Math.PI) / 180, ref = null;
+    for (const arr of segs) for (let i = 0; i < arr.length; i += 4) {
+      const ax = arr[i], ay = arr[i + 1], bx = arr[i + 2], by = arr[i + 3];
+      if (Math.hypot(bx - ax, by - ay) * v.s < 20) continue;
+      if ((Math.abs(ax - from.x) < 1e-6 && Math.abs(ay - from.y) < 1e-6) || (Math.abs(bx - from.x) < 1e-6 && Math.abs(by - from.y) < 1e-6)) continue;
+      let d = Math.abs(ang - Math.atan2(by - ay, bx - ax)) % Math.PI; d = Math.min(d, Math.PI - d);
+      // прямые углы и так видно — параллель нужна для косых стен
+      if (d < bestD) { bestD = d; ref = [ax, ay, bx, by]; }
     }
-  } else if (S.settings.ortho && from) {
-    const dx = w.x - from.x, dy = w.y - from.y;
-    w = Math.abs(dx) >= Math.abs(dy) ? { x: w.x, y: from.y } : { x: from.x, y: w.y };
-    snapMark = { x: w.x, y: w.y, type: 'ortho' };
+    if (ref) {
+      let rx = ref[2] - ref[0], ry = ref[3] - ref[1]; const rl = Math.hypot(rx, ry); rx /= rl; ry /= rl;
+      if (rx * dx0 + ry * dy0 < 0) { rx = -rx; ry = -ry; }
+      ux = rx; uy = ry; dirType = 'par'; lines.push([...ref, 'ref']);
+    }
   }
+  if (ux != null) { const d = dx0 * ux + dy0 * uy; w = { x: from.x + ux * d, y: from.y + uy * d }; }
+  let type = dirType, label = dirType === 'polar' ? `${(((Math.round((Math.atan2(uy, ux) * 180) / Math.PI)) % 360) + 360) % 360}°` : null;
+  if (on) {
+    const Rl = (lastPtrType === 'mouse' ? 10 : 14) / v.s; // длину и выравнивание ловим аккуратнее, чем точки
+    const L = Math.hypot(w.x - from.x, w.y - from.y);
+    const cx = L ? (w.x - from.x) / L : 0, cy = L ? (w.y - from.y) / L : 0;
+    // равная длина: как у другой стены (параллельные — в приоритете)
+    let eq = null;
+    if (M.equal && L > 0) {
+      let bd = Rl;
+      for (const arr of segs) for (let i = 0; i < arr.length; i += 4) {
+        const ax = arr[i], ay = arr[i + 1], bx = arr[i + 2], by = arr[i + 3];
+        const Ls = Math.hypot(bx - ax, by - ay); if (Ls * v.s < 20) continue;
+        const par = Math.abs(((bx - ax) * cx + (by - ay) * cy) / Ls) > 0.985;
+        const dd = Math.abs(L - Ls) - (par ? Rl * 0.4 : 0);
+        if (dd < bd) { bd = dd; eq = { Ls, seg: [ax, ay, bx, by], pt: { x: from.x + cx * Ls, y: from.y + cy * Ls } }; }
+      }
+    }
+    // отслеживание: выравнивание по углам по горизонтали и вертикали
+    let tr = null;
+    if (M.track) {
+      const P = trackPoints();
+      let bx = null, by = null, dxb = Rl * 1.3, dyb = Rl * 1.3;
+      for (let i = 0; i < P.length; i += 2) {
+        const px = P[i], py = P[i + 1];
+        if (Math.abs(px - from.x) < 1e-6 && Math.abs(py - from.y) < 1e-6) continue;
+        if (Math.abs(w.x - px) < dxb) { dxb = Math.abs(w.x - px); bx = [px, py]; }
+        if (Math.abs(w.y - py) < dyb) { dyb = Math.abs(w.y - py); by = [px, py]; }
+      }
+      if (ux != null) {
+        let tb = null;
+        if (bx && Math.abs(ux) > 1e-3) { const t = (bx[0] - from.x) / ux; if (t > 0) tb = { t, src: bx }; }
+        if (by && Math.abs(uy) > 1e-3) { const t = (by[1] - from.y) / uy; if (t > 0 && (!tb || Math.abs(t - L) < Math.abs(tb.t - L))) tb = { t, src: by }; }
+        if (tb) { const pt = { x: from.x + ux * tb.t, y: from.y + uy * tb.t }; tr = { pt, lines: [[tb.src[0], tb.src[1], pt.x, pt.y, 'track']] }; }
+      } else if (bx || by) {
+        const pt = { x: bx ? bx[0] : w.x, y: by ? by[1] : w.y };
+        tr = { pt, lines: [] };
+        if (bx) tr.lines.push([bx[0], bx[1], pt.x, pt.y, 'track']);
+        if (by) tr.lines.push([by[0], by[1], pt.x, pt.y, 'track']);
+      }
+    }
+    // берём ту привязку, что ближе к пальцу; вторую показываем, если она тоже совпала
+    const dEq = eq ? Math.hypot(eq.pt.x - w.x, eq.pt.y - w.y) : Infinity, dTr = tr ? Math.hypot(tr.pt.x - w.x, tr.pt.y - w.y) : Infinity;
+    if (tr && dTr <= dEq) {
+      w = tr.pt; type = 'track'; lines.push(...tr.lines);
+      if (eq) { const L2 = Math.hypot(w.x - from.x, w.y - from.y); if (Math.abs(L2 - eq.Ls) * unitM() < 0.005) { label = `= ${fmt(eq.Ls * unitM())}`; lines.push([...eq.seg, 'ref']); } }
+    } else if (eq) {
+      w = eq.pt; type = 'equal'; label = `= ${fmt(eq.Ls * unitM())}`; lines.push([...eq.seg, 'ref']);
+      if (tr) { const ok = tr.lines.some((l) => Math.abs(l[0] - w.x) * v.s < 3 || Math.abs(l[1] - w.y) * v.s < 3); if (ok) lines.push(...tr.lines.map((l) => [l[0], l[1], w.x, w.y, 'track'])); }
+    }
+  }
+  if (type) snapMark = { x: w.x, y: w.y, type, from, lines, label, dirType };
   return w;
+}
+/** Меню → Привязка: все режимы галочками */
+function renderSnapSettings() {
+  const box = $('snapSettings'); if (!box) return;
+  const M = snapModes();
+  const row = (id, title, help, on) => `<label class="snapRow"><input type="checkbox" data-sn="${id}"${on ? ' checked' : ''}><span><b>${title}</b><small>${help}</small></span></label>`;
+  box.innerHTML =
+    row('_snap', 'Привязка включена (ПРИВ)', 'общий выключатель всех привязок ниже', !!S.settings.snap) +
+    row('_ortho', 'Орто', 'только горизонтально и вертикально (90°)', !!S.settings.ortho) +
+    row('_polar', 'Полярные углы 5° (УГОЛ)', 'направление с шагом 5°', !!S.settings.polar) +
+    '<div class="snapGrid">' + Object.keys(SNAP_DEF).map((k) => row(k, SNAP_NAMES[k], SNAP_HELP[k], !!M[k])).join('') + '</div>' +
+    '<div class="row"><button class="btn" id="snapAll">Включить все</button><button class="btn" id="snapStd">Как по умолчанию</button></div>';
+  for (const cb of box.querySelectorAll('input[data-sn]')) cb.onchange = () => {
+    const k = cb.dataset.sn, v = cb.checked;
+    if (k === '_snap') S.settings.snap = v;
+    else if (k === '_ortho') { S.settings.ortho = v; if (v) S.settings.polar = false; }
+    else if (k === '_polar') { S.settings.polar = v; if (v) S.settings.ortho = false; }
+    else { S.settings.snapModes = { ...M, ...S.settings.snapModes, [k]: v }; if (v) S.settings.snap = true; }
+    syncSnapUI(); save(); renderSnapSettings();
+  };
+  $('snapAll').onclick = () => { S.settings.snapModes = Object.fromEntries(Object.keys(SNAP_DEF).map((k) => [k, true])); S.settings.snap = true; syncSnapUI(); save(); renderSnapSettings(); };
+  $('snapStd').onclick = () => { S.settings.snapModes = { ...SNAP_DEF }; S.settings.snap = true; syncSnapUI(); save(); renderSnapSettings(); };
 }
 function drawSnapMark(c, v, pal) {
   if (!snapMark) return;
-  const p = w2s(snapMark.x, snapMark.y, v);
-  if (snapMark.type === 'polar') {
-    const f = w2s(snapMark.from.x, snapMark.from.y, v);
-    const dx = p.x - f.x, dy = p.y - f.y, L = Math.hypot(dx, dy) || 1;
-    c.save(); c.strokeStyle = pal.accent2; c.lineWidth = 1; c.setLineDash([6, 5]);
-    c.beginPath(); c.moveTo(f.x, f.y); c.lineTo(f.x + (dx / L) * 2000, f.y + (dy / L) * 2000); c.stroke(); c.setLineDash([]);
-    pill(c, p.x + 26, p.y + 26, `${snapMark.ang}°`, pal.accent2, '#fff', { size: 11, shadow: false });
-    c.restore();
-    return;
-  }
+  const m = snapMark, p = w2s(m.x, m.y, v);
   c.save();
+  // линии слежения и стена-образец
+  for (const l of m.lines || []) {
+    const a = w2s(l[0], l[1], v), b = w2s(l[2], l[3], v);
+    if (l[4] === 'ref') { c.strokeStyle = 'rgba(234,88,12,.85)'; c.lineWidth = 4; c.setLineDash([]); }
+    else { c.strokeStyle = 'rgba(22,163,74,.9)'; c.lineWidth = 1.2; c.setLineDash([5, 4]); }
+    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+  }
+  c.setLineDash([]);
+  if (m.line) { const a = w2s(m.line[0], m.line[1], v), b = w2s(m.line[2], m.line[3], v); c.strokeStyle = 'rgba(22,163,74,.9)'; c.lineWidth = 1.2; c.setLineDash([5, 4]); c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); c.setLineDash([]); }
+  if (m.dirType === 'polar' || m.dirType === 'par' || m.type === 'ortho') {
+    const f = w2s(m.from.x, m.from.y, v), dx = p.x - f.x, dy = p.y - f.y, L = Math.hypot(dx, dy) || 1;
+    c.strokeStyle = pal.accent2; c.lineWidth = 1; c.setLineDash([6, 5]);
+    c.beginPath(); c.moveTo(f.x, f.y); c.lineTo(f.x + (dx / L) * 2000, f.y + (dy / L) * 2000); c.stroke(); c.setLineDash([]);
+  }
   c.strokeStyle = '#16a34a'; c.lineWidth = 2.2;
   c.beginPath();
   const r = 8;
-  switch (snapMark.type) {
+  switch (m.type) {
     case 'end': c.rect(p.x - r, p.y - r, r * 2, r * 2); break;
     case 'mid': c.moveTo(p.x, p.y - r - 1); c.lineTo(p.x + r + 1, p.y + r); c.lineTo(p.x - r - 1, p.y + r); c.closePath(); break;
     case 'perp': c.moveTo(p.x - r, p.y - r); c.lineTo(p.x - r, p.y + r); c.lineTo(p.x + r, p.y + r); c.moveTo(p.x - r, p.y); c.lineTo(p.x, p.y); c.lineTo(p.x, p.y + r); break;
     case 'near': c.moveTo(p.x - r, p.y - r); c.lineTo(p.x + r, p.y - r); c.lineTo(p.x - r, p.y + r); c.lineTo(p.x + r, p.y + r); c.closePath(); break;
+    case 'int': c.moveTo(p.x - r, p.y - r); c.lineTo(p.x + r, p.y + r); c.moveTo(p.x + r, p.y - r); c.lineTo(p.x - r, p.y + r); break;
+    case 'track': case 'ext': c.moveTo(p.x - r, p.y); c.lineTo(p.x + r, p.y); c.moveTo(p.x, p.y - r); c.lineTo(p.x, p.y + r); break;
+    case 'equal': c.moveTo(p.x - r, p.y - 3); c.lineTo(p.x + r, p.y - 3); c.moveTo(p.x - r, p.y + 3); c.lineTo(p.x + r, p.y + 3); break;
+    case 'par': c.moveTo(p.x - r, p.y + r); c.lineTo(p.x - 2, p.y - r); c.moveTo(p.x + 2, p.y + r); c.lineTo(p.x + r, p.y - r); break;
     default: c.strokeStyle = pal.accent2; c.moveTo(p.x - r, p.y); c.lineTo(p.x + r, p.y); c.moveTo(p.x, p.y - r); c.lineTo(p.x, p.y + r);
   }
   c.stroke();
-  const names = { end: 'Конточка', mid: 'Середина', perp: 'Нормаль', near: 'Ближайшая', ortho: 'Орто' };
-  if (names[snapMark.type]) {
-    c.font = '700 11px system-ui, sans-serif'; c.fillStyle = snapMark.type === 'ortho' ? pal.accent2 : '#16a34a';
-    c.textAlign = 'left'; c.fillText(names[snapMark.type], p.x + 12, p.y + 22);
-  }
+  const name = (SNAP_NAMES[m.type] || '') + (m.label ? (SNAP_NAMES[m.type] ? ' ' : '') + m.label : '');
+  if (name) pill(c, p.x + 14, p.y + 26, name, m.type === 'equal' ? 'rgba(234,88,12,.95)' : m.type === 'ortho' || m.type === 'polar' ? pal.accent2 : '#16a34a', '#fff', { size: 11, shadow: false });
   c.restore();
 }
 function distSeg(px, py, ax, ay, bx, by) {
@@ -814,6 +947,7 @@ cv.addEventListener('pointerdown', (e) => {
   if (ptrs.size === 2) {
     const [a, b] = [...ptrs.values()];
     gesture = { type: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), c: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, v: { ...V() } };
+    if (S.draft) S.draft.hover = null;
     return;
   }
   if (ptrs.size > 2) return;
@@ -825,6 +959,11 @@ cv.addEventListener('pointerdown', (e) => {
     }
   }
   if (S.turnArm) { pushUndo(); const t = turnToward(p.x, p.y); if (t) toast('Поворот: ' + t, true); gesture = { type: 'turn', start: p, moved: true }; requestDraw(); return; }
+  // черчение пальцем: держите палец — видно линию, длину и привязки; отпустили — точка встала (двигать план — двумя пальцами)
+  if (S.tool === 'sketch' && S.draft && !S.draft.auto && draftFrom() && !S.openArm && e.pointerType !== 'mouse') {
+    gesture = { type: 'aim', start: p, last: p };
+    S.draft.hover = snap(p.x, p.y, draftFrom()); requestDraw(); return;
+  }
   // в режимах черчения/проёмов/рулетки нажатие идёт в инструмент; перетаскивать можно только двери и окна
   const freeHit = ['select', 'point', 'line', 'walls'].includes(S.tool) && !S.openArm;
   const op0 = !S.draft ? pickOpen(p.x, p.y) : null;
@@ -861,6 +1000,7 @@ cv.addEventListener('pointermove', (e) => {
     return;
   }
   if (gesture.type === 'turn') { const t = turnToward(p.x, p.y); if (t) toast('Поворот: ' + t, true); requestDraw(); return; }
+  if (gesture.type === 'aim') { gesture.last = p; if (S.draft) S.draft.hover = snap(p.x, p.y, draftFrom()); requestDraw(); return; }
   const dx = p.x - gesture.start.x, dy = p.y - gesture.start.y;
   if (!gesture.moved && Math.hypot(dx, dy) < 7) return;
   if (!gesture.moved) { gesture.moved = true; if (gesture.type === 'drag' || gesture.type === 'slope') pushUndo(); }
@@ -926,6 +1066,7 @@ function endPtr(e) {
   const g = gesture; gesture = null;
   if (g.type === 'slope') { if (g.moved) { save(); hint(''); } draw(); return; }
   if (g.type === 'turn') { save(); draw(); return; }
+  if (g.type === 'aim') { if (S.draft) S.draft.hover = null; tap(g.last); draw(); return; }
   if (g.type === 'drag') {
     snapMark = null;
     if (g.moved) { save(); refreshSheet(); }
@@ -3975,6 +4116,7 @@ function bindMenu() {
   }
   $('btnMenu').onclick = () => {
     renderPlanInfo();
+    renderSnapSettings();
     $('setShadow').checked = !!S.settings.layers.shadow; $('setShadowDims').checked = !!S.settings.layers.shadowDims;
     $('menuModal').hidden = false;
   };
@@ -4110,6 +4252,7 @@ async function init() {
   if (settings) {
     const lay = { ...S.settings.layers, ...(settings.layers || {}) };
     Object.assign(S.settings, settings); S.settings.layers = lay;
+    S.settings.snapModes = { ...SNAP_DEF, ...(settings.snapModes || {}) };
     S.settings.btnPos = S.settings.btnPos || {};
   }
   if (session) Object.assign(S, { block: session.block, floor: session.floor ?? 1, dir: session.dir || 'down', toFloor: session.toFloor ?? 0 });

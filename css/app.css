@@ -549,3 +549,14 @@ body.focus .openPad .doneBtn { height: calc(var(--b) + 8px); }
 .dirPad .gyroOrtho { order: -2; }
 .dirPad .gyroOrtho[hidden] { display: none; }
 .dirPad .gyroOrtho.on { background: var(--accent2); color: #fff; }
+
+/* меню: привязка */
+.snapSet { display: grid; gap: 6px; }
+.snapGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
+@media (max-width: 380px) { .snapGrid { grid-template-columns: 1fr; } }
+.snapRow { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: var(--bg); cursor: pointer; }
+.snapRow input { width: 22px; height: 22px; margin: 1px 0 0; flex: none; accent-color: #16a34a; }
+.snapRow span { display: flex; flex-direction: column; gap: 2px; }
+.snapRow b { font-size: 14px; }
+.snapRow small { font-size: 11px; color: var(--ink2); line-height: 1.3; }
+.snapSet .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
