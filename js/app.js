@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.6.0';
+const VERSION = '2.6.1';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -2113,17 +2113,24 @@ async function toggleGyro() {
   } catch (e) { notice('Не удалось включить датчик поворота: ' + (e.message || e)); return; }
   window.removeEventListener('deviceorientation', onGyro);
   window.addEventListener('deviceorientation', onGyro);
-  GYRO.on = true; GYRO.last = null; syncGyroBtn();
+  GYRO.on = true; GYRO.last = null;
+  if (!S.settings.polar) S.settings.ortho = true; // по умолчанию — прямые углы
+  syncSnapUI(); syncGyroBtn();
   toast('Направление по телефону: первую стену — кнопкой, дальше поворачивайтесь с телефоном и меряйте', true);
   setTimeout(() => { if (GYRO.on && !GYRO.seen) { GYRO.on = false; syncGyroBtn(); notice('Датчик поворота не найден на этом устройстве.'); } }, 2500);
 }
-function syncGyroBtn() { $('gyroBtn').classList.toggle('on', GYRO.on); }
+function syncGyroBtn() {
+  $('gyroBtn').classList.toggle('on', GYRO.on);
+  $('gyroOrtho').hidden = !GYRO.on;
+  $('gyroOrtho').classList.toggle('on', !!S.settings.ortho);
+}
 /** Направление следующей линии по повороту телефона от прошлой стены (округление 90°, с «УГОЛ» — 5°) */
 function gyroDir() {
   if (!GYRO.on || GYRO.h == null || !GYRO.last) return null;
   const it = skItem();
   if (!it?.dirs?.length || GYRO.last.id !== it.id) return null;
-  const step = S.settings.polar ? 5 : 90;
+  // ОРТО — только 90°; без него линия идёт за телефоном (с «УГОЛ» — шаг 5°, иначе 1°)
+  const step = S.settings.ortho ? 90 : S.settings.polar ? 5 : 1;
   const rel = Math.round(normDeg(GYRO.h - GYRO.last.h) / step) * step;
   return it.dirs[it.dirs.length - 1] + rel;
 }
@@ -2146,7 +2153,9 @@ function drawGyroPreview(c, v) {
   c.moveTo(bx + Math.cos(ang) * 10, by + Math.sin(ang) * 10);
   c.lineTo(bx + Math.cos(ang + 2.5) * 10, by + Math.sin(ang + 2.5) * 10);
   c.lineTo(bx + Math.cos(ang - 2.5) * 10, by + Math.sin(ang - 2.5) * 10); c.fill();
-  pill(c, bx + Math.cos(ang) * 30, by + Math.sin(ang) * 30, '📱 ' + relText(gd - sketchLastDir()), '#1f6feb', '#fff', { size: 12 });
+  // подпись не уходит за край и под кнопки слева/справа
+  const lx = Math.max(150, Math.min(cv.clientWidth - 130, bx + Math.cos(ang) * 30)), ly = Math.max(70, Math.min(cv.clientHeight - 60, by + Math.sin(ang) * 30));
+  pill(c, lx, ly, '📱 ' + relText(gd - sketchLastDir()), '#1f6feb', '#fff', { size: 12 });
   c.restore();
 }
 function sketchLastDir() {
@@ -2239,6 +2248,7 @@ function bindMbar() {
   $('mUndo').onclick = () => (S.tool === 'sketch' && S.draft ? sketchUndo() : doUndo());
   $('mRedo').onclick = doRedo;
   $('gyroBtn').onclick = toggleGyro;
+  $('gyroOrtho').onclick = () => { S.settings.ortho = !S.settings.ortho; if (S.settings.ortho) S.settings.polar = false; syncSnapUI(); save(); draw(); toast(S.settings.ortho ? 'Орто: только 90°' : 'Линия идёт точно за телефоном', true); };
   $('dirRedo').onclick = doRedo;
   $('mPrev').onclick = () => (S.tool === 'sketch' ? skmGo(-1) : gotoSeg(-1));
   $('mNext').onclick = () => (S.tool === 'sketch' ? skmGo(1) : gotoSeg(1, true));
@@ -2670,6 +2680,7 @@ function syncSnapUI() {
   }
   $('btnSnap').classList.toggle('on', !!S.settings.snap);
   $('btnOrtho').classList.toggle('on', !!S.settings.ortho);
+  if ($('gyroOrtho')) $('gyroOrtho').classList.toggle('on', !!S.settings.ortho);
   $('btnPolar').classList.toggle('on', !!S.settings.polar);
   $('btnRot').classList.toggle('on', !!S.settings.rotate);
   $('fsSnake').classList.toggle('on', !!S.settings.rotate);
