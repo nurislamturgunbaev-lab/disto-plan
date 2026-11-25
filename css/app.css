@@ -217,7 +217,9 @@ button { cursor: pointer; border: 0; background: none; }
 /* модальные окна */
 .modal { position: fixed; inset: 0; z-index: 50; background: rgba(8,14,28,.5); display: flex; align-items: flex-end; justify-content: center; }
 .panel {
-  width: 100%; max-width: 760px; max-height: 92vh; overflow-y: auto; background: var(--card);
+  width: 100%; max-width: 760px; overflow-y: auto; background: var(--card);
+  /* не заходит под вырез/часы сверху: всегда остаётся место над окном */
+  max-height: calc(100vh - var(--safeT) - 64px); max-height: calc(100dvh - var(--safeT) - 64px);
   border-radius: 20px 20px 0 0; padding: 16px 16px calc(20px + var(--safeB)); animation: up .2s ease-out;
 }
 .panel.narrow { max-width: 440px; }
@@ -514,3 +516,8 @@ body.focus .mini { top: calc(10px + var(--safeT)); }
 .sendNote { text-align: center; margin: 4px 0 8px; }
 .moreFiles { margin-top: 6px; }
 .moreFiles summary { cursor: pointer; font-weight: 700; color: var(--ink2); padding: 8px 2px; }
+
+/* заголовок окна с ✕ всегда виден, даже если прокрутить вниз */
+.panelHead { position: sticky; top: -16px; z-index: 3; background: var(--card); margin: -16px -16px 8px; padding: 14px 16px 10px; border-radius: 20px 20px 0 0; }
+.panelHead .ic.ghost, .panelHead [data-close] { width: 52px; height: 52px; font-size: 22px; flex: none; }
+body:has(.modal:not([hidden])) .toast { opacity: 0; }
