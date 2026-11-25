@@ -521,3 +521,11 @@ body.focus .mini { top: calc(10px + var(--safeT)); }
 .panelHead { position: sticky; top: -16px; z-index: 3; background: var(--card); margin: -16px -16px 8px; padding: 14px 16px 10px; border-radius: 20px 20px 0 0; }
 .panelHead .ic.ghost, .panelHead [data-close] { width: 52px; height: 52px; font-size: 22px; flex: none; }
 body:has(.modal:not([hidden])) .toast { opacity: 0; }
+
+/* правый пульт полного экрана: на невысоких экранах — в две колонки, чтобы всё помещалось */
+@media (orientation: portrait) {
+  body.focus .openPad:not([hidden]) { top: calc(100px + var(--safeT)); }
+}
+@media (orientation: portrait) and (max-height: 860px) {
+  body.focus .openPad:not([hidden]) { display: grid; grid-template-columns: repeat(2, 48px); gap: 7px; }
+}

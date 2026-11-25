@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.4.5';
+const VERSION = '2.5.0';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -1185,6 +1185,7 @@ function skmRecord(meters) {
   pushUndo();
   const i = S.skm.i;
   it.lens[i] = meters;
+  if (it.rect && it.dirs.length === 4) { const o = (i + 2) % 4; if (it.lens[o] == null) it.dlens[o] = meters; } // квадрат остаётся квадратом
   rebuildSketch(it); save(); feedback();
   const n = it.dirs.length;
   let next = -1;
@@ -2578,6 +2579,7 @@ function syncSnapUI() {
   $('btnOrtho').classList.toggle('on', !!S.settings.ortho);
   $('btnPolar').classList.toggle('on', !!S.settings.polar);
   $('btnRot').classList.toggle('on', !!S.settings.rotate);
+  $('fsSnake').classList.toggle('on', !!S.settings.rotate);
   $('setSnap').checked = !!S.settings.snap;
 }
 function syncOpenPad() {
@@ -2702,6 +2704,32 @@ function stepRotation() {
   placeWorldAt(v, head.x, head.y, h.x + dx * 0.22, h.y + dy * 0.22);
   return true;
 }
+/** Квадратная (прямоугольная) комната одной кнопкой: 4 стены, сразу замер по очереди */
+function addRectRoom() {
+  if (!blk()) { toast('Сначала создайте лист: «+» вверху', true); return; }
+  if (S.tool !== 'sketch') { S.tool = 'sketch'; syncToolUI(); }
+  if (S.draft && !S.draft.auto && skItem()?.dirs?.length) finishSketchQuiet();
+  S.skm = null;
+  let x, y;
+  const rooms = curItems().filter((i) => i.kind === 'sketch' && i.pts?.length >= 4);
+  if (rooms.length) {
+    // вплотную справа от последней комнаты, низом на одной линии
+    const last = rooms.slice().sort((a, b) => (b.t || 0) - (a.t || 0))[0], bb = bboxOf(last.pts);
+    const th = (S.settings.wallTh > 0 ? S.settings.wallTh / 100 : 0) / unitM();
+    x = bb[2] + th; y = bb[1];
+  } else if (S.draft?.auto && S.draft.pts.length >= 2) { x = S.draft.pts[0]; y = S.draft.pts[1]; }
+  else {
+    S.draft = null; startBlankDraft();
+    if (S.draft?.pts?.length >= 2 && curItems().some((i) => i.kind === 'sketch')) { x = S.draft.pts[0]; y = S.draft.pts[1]; }
+    else { const c = screenToWorld(cv.clientWidth / 2, cv.clientHeight / 2); const h = 1.5 / unitM(), w = 2 / unitM(); x = c.x - w; y = c.y - h; }
+  }
+  pushUndo();
+  const it = { id: uid(), kind: 'sketch', start: [x, y], dirs: [0, 90, 180, 270], lens: [null, null, null, null], dlens: [4, 3, 4, 3], closed: true, rect: true, block: S.block, floor: S.floor, t: Date.now() };
+  rebuildSketch(it);
+  S.items.push(it); S.draft = null;
+  save(); startSkm(it, 0);
+  toast('Квадратная комната: меряйте лазером стены по очереди, с нижней', true);
+}
 /** Поворот чертежа кнопкой «90°» для текущего листа (радианы) */
 function baseRot() { return (((S.settings.baseRot || {})[S.block] || 0) * Math.PI) / 2; }
 function rotate90() {
@@ -2745,6 +2773,9 @@ function bindTools() {
   $('btnRot').onclick = () => { S.viewFollow = true; S.settings.rotate = !S.settings.rotate; syncSnapUI(); save(); draw(); toast(S.settings.rotate ? 'Змейка: текущая линия в центре, план крутится вокруг неё' : 'Поворот плана выключен'); };
   $('compass').onclick = () => { S.settings.rotate = false; (S.settings.baseRot = S.settings.baseRot || {})[S.block] = 0; S.viewFollow = true; syncSnapUI(); save(); draw(); };
   $('btnRot90').onclick = rotate90;
+  $('btnRect').onclick = () => { $('toolsPop').hidden = true; addRectRoom(); };
+  $('fsRect').onclick = addRectRoom;
+  $('fsSnake').onclick = () => $('btnRot').click();
   $('fsRot90').onclick = rotate90;
   for (const b of $('openPad').querySelectorAll('[data-ot]')) b.onclick = () => {
     S.turnArm = false; S.openArm = S.openArm === b.dataset.ot ? null : b.dataset.ot; syncOpenPad();
