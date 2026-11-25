@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.3.2';
+const VERSION = '2.4.1';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -76,7 +76,7 @@ const S = {
   draft: null, // {kind:'line'|'sketch', pts:[]}
   settings: { floorH: 0, theme: 'light', otherFloors: false, snap: true, beep: true, autoNext: true, wallMin: 0.15, wallColumns: false, wallLabels: true, ortho: false, snapModes: { end: true, mid: true, perp: true, near: false },
     polar: false, rotate: false, laserRef: 'back', laserOffset: 0.13, wallTh: 0, btnPos: {},
-    layers: { drawing: true, shadow: true, dims: true, areas: true, openings: true, thick: true, hatch: false, text: false, redoBtn: false, roomOps: false, mini: true, shadowDims: false } },
+    layers: { drawing: true, shadow: true, dims: true, areas: true, openings: true, thick: true, hatch: false, text: false, redoBtn: true, roomOps: false, mini: true, shadowDims: false } },
   views: {},
   undo: [],
   lastMeasure: null,
@@ -108,15 +108,23 @@ function doRedo() {
   if (!s2) return toast('Нечего повторять');
   S.undo.push(JSON.stringify(S.items));
   S.items = JSON.parse(s2);
-  S.draft = null; S.skm = null;
+  // черчение продолжается: линия, которую вернули, снова текущая
+  if (S.draft) {
+    let it = S.items.find((i) => i.id === S.draft.itemId);
+    if (!it && S.draft.pts.length >= 2) it = S.items.find((i) => i.kind === 'sketch' && !i.closed && i.block === S.block && i.floor === S.floor && Math.hypot(i.start[0] - S.draft.pts[0], i.start[1] - S.draft.pts[1]) < 1e-6);
+    if (it && !it.closed) { S.draft.itemId = it.id; S.draft.pts = it.pts.slice(); S.draft.auto = false; } else S.draft = null;
+  }
+  if (S.skm && !S.items.find((i) => i.id === S.skm.id)) S.skm = null;
   save(); draw(); refreshSheet(); toast('Повторено');
 }
 function doUndo() {
   const s = S.undo.pop();
   if (!s) return toast('Нечего отменять');
   (S.redo = S.redo || []).push(JSON.stringify(S.items));
+  const dIt = S.draft?.itemId ? S.items.find((i) => i.id === S.draft.itemId) : null;
   S.items = JSON.parse(s);
-  if (S.draft?.itemId && !S.items.find((i) => i.id === S.draft.itemId)) S.draft = null;
+  // убрали первый отрезок — начало линии остаётся на месте, можно чертить дальше
+  if (S.draft?.itemId && !S.items.find((i) => i.id === S.draft.itemId)) S.draft = dIt ? { kind: 'sketch', pts: dIt.start.slice() } : null;
   else if (S.draft?.itemId) { const it = S.items.find((i) => i.id === S.draft.itemId); S.draft.pts = it.pts.slice(); }
   if (S.skm && !S.items.find((i) => i.id === S.skm.id)) S.skm = null;
   if (!S.items.find((i) => i.id === S.selId)) select(null);
@@ -948,12 +956,14 @@ function tap(p) {
     if (!sg) {
       selectSeg(null);
       const hs = pickSketchSeg(p.x, p.y, false, 26);
-      if (hs) askSkm(hs.it, hs.k, () => { S.tool = 'sketch'; syncToolUI(); });
+      if (hs) { S.tool = 'sketch'; syncToolUI(); remeasure(hs.it, hs.k); }
       else if (!hasDrawing()) toast('Нажмите на стену нарисованной комнаты', true);
       return;
     }
     if (S.session) { selectSeg(sg.key); return; }
     selectSeg(sg.key);
+    const was = segItem(sg.key);
+    if (was?.value != null) { toast(`Перемер: было ${fmt(was.value)} м — меряйте лазером. Нажмите мимо — выйти`, true); return; }
     ask(`Начинаем замер?\nКомната ${sg.room}, стена ${sg.wall} из ${sg.of}. Замеры с лазера будут записываться автоматически, стена за стеной, затем соседние комнаты.`, 'Да, начать').then((yes) => {
       if (!yes) return;
       S.session = true; S.settings.autoNext = true; S.sheetFull = false;
@@ -991,13 +1001,16 @@ function tap(p) {
     const nSeg = skItem()?.dirs.length || 0;
     if (!d || (nSeg === 0 && d.auto)) {
       // нажатие на стену готовой комнаты — замер этой стены
-      const hs = pickSketchSeg(p.x, p.y, false);
-      if (hs) {
-        const wpt = w;
-        askSkm(hs.it, hs.k, null, () => { S.skm = null; S.draft = { kind: 'sketch', pts: [wpt.x, wpt.y] }; hint('Начало линии. Направление + лазер'); draw(); });
-        return;
+      // нажали на угол комнаты — новая комната начинается из этого угла (рядом с прежней, план не сдвигается)
+      const cn = pickCorner(p.x, p.y, 16);
+      if (cn) {
+        S.skm = null; S.draft = { kind: 'sketch', pts: [cn.x, cn.y] };
+        hint('Начало новой комнаты — из угла. Направление + лазер, или нажимайте точки'); draw(); return;
       }
-      S.skm = null;
+      // нажали на середину стены — сразу её перемер
+      const hs = pickSketchSeg(p.x, p.y, false);
+      if (hs) { remeasure(hs.it, hs.k); return; }
+      if (S.skm) { S.skm = null; hint(''); toast('Вышли без изменений', true); if (isBlank()) startBlankDraft(); draw(); return; }
       S.draft = { kind: 'sketch', pts: [w.x, w.y] };
       hint('Начало линии. Направление + лазер, или нажимайте точки');
       draw(); return;
@@ -1067,6 +1080,7 @@ function skAddSeg(dirDeg, lenM, measured) {
   if (!it) {
     pushUndo();
     it = { id: uid(), kind: 'sketch', start: [d.pts[0], d.pts[1]], dirs: [], lens: [], dlens: [], pts: [d.pts[0], d.pts[1]], block: S.block, floor: S.floor, t: Date.now() };
+    if (d.auto) it.autoStart = true; // начало поставлено автоматически (лазером без нажатия)
     S.items.push(it); d.itemId = it.id;
   } else pushUndo();
   d.auto = false;
@@ -1098,6 +1112,7 @@ function bboxOf(p) {
 }
 /** Комнаты не налезают друг на друга: новая отодвигается вправо на толщину стены */
 function separateRoom(it) {
+  if (!it.autoStart) return; // комнату начертили там, где нажали, — не двигаем
   const others = S.items.filter((o) => o !== it && o.kind === 'sketch' && o.closed && o.block === it.block && o.floor === it.floor);
   if (!others.length) return;
   const gap = (S.settings.wallTh > 0 ? S.settings.wallTh / 100 : 0.2) / unitM();
@@ -1127,8 +1142,29 @@ function closeSketch(it, viaTap) {
 }
 function afterRoomDone() {
   S.skm = null;
-  if (isBlank() && S.tool === 'sketch') { startBlankDraft(); S.sketchRel = 's'; S.views[S.block] = fitView(blk()); }
+  if (isBlank() && S.tool === 'sketch') { startBlankDraft(); S.sketchRel = 's'; } // вид не прыгает — план остаётся на месте
 }
+/** Ближайший угол начерченных комнат этажа (экран, px) */
+function pickCorner(sx, sy, tol) {
+  let best = null, bd = tol;
+  for (const it of curItems()) {
+    if (it.kind !== 'sketch' || !it.pts) continue;
+    for (let i = 0; i < it.pts.length; i += 2) {
+      const q = w2s(it.pts[i], it.pts[i + 1]), d = Math.hypot(q.x - sx, q.y - sy);
+      if (d < bd) { bd = d; best = { x: it.pts[i], y: it.pts[i + 1] }; }
+    }
+  }
+  return best;
+}
+/** Нажали на стену — сразу её замер (перемер). Передумали — нажать мимо, ✕ или «Готово» */
+function remeasure(it, k) {
+  if (S.draft && !S.draft.auto && skItem()?.dirs?.length) finishSketchQuiet();
+  S.draft = null;
+  startSkm(it, k);
+  const cur = it.lens[k];
+  toast(cur != null ? `Перемер стены ${k + 1}: было ${fmt(cur)} м — меряйте лазером. Нажмите мимо — выйти` : `Замер стены ${k + 1} из ${it.dirs.length} — меряйте лазером`, true);
+}
+function finishSketchQuiet() { S.draft = null; save(); }
 /** Спросить перед замером стены нарисованной комнаты */
 function askSkm(it, k, onYes, onNo) {
   const n = it.dirs.length, cur = it.lens[k];
@@ -1141,7 +1177,7 @@ function askSkm(it, k, onYes, onNo) {
   });
 }
 /** Замер нарисованной линии/комнаты: стены по очереди */
-function startSkm(it, k) { S.viewFollow = true; S.skm = { id: it.id, i: k }; S.draft = null; hint(`Замер: стена ${k + 1} из ${it.dirs.length} — меряйте лазером`); draw(); }
+function startSkm(it, k) { S.skm = { id: it.id, i: k }; S.draft = null; hint(`Замер: стена ${k + 1} из ${it.dirs.length} — меряйте лазером`); draw(); }
 const skmItem = () => (S.skm ? S.items.find((i) => i.id === S.skm.id) : null);
 function skmRecord(meters) {
   const it = skmItem();
@@ -1210,17 +1246,7 @@ function polyCentroid(p) {
   if (Math.abs(A) < 1e-9) { let x = 0, y = 0; for (let i = 0; i < n; i++) { x += p[i * 2]; y += p[i * 2 + 1]; } return { x: x / n, y: y / n }; }
   return { x: cx / (3 * A), y: cy / (3 * A) };
 }
-function sketchUndo() {
-  const it = skItem();
-  if (it && it.dirs.length) {
-    pushUndo();
-    it.dirs.pop(); it.lens.pop(); it.dlens.pop();
-    if (!it.dirs.length) { S.items = S.items.filter((i) => i !== it); S.draft.itemId = null; S.draft.pts = it.start.slice(); }
-    else { rebuildSketch(it); S.draft.pts = it.pts.slice(); }
-    save(); draw(); return;
-  }
-  doUndo();
-}
+function sketchUndo() { doUndo(); } // каждый отрезок сохраняется в истории — «Повторить» вернёт удалённое
 function draftFrom() {
   const d = S.draft;
   return d && d.pts.length >= 2 ? { x: d.pts[d.pts.length - 2], y: d.pts[d.pts.length - 1] } : null;
@@ -2119,6 +2145,7 @@ function bindMbar() {
   $('dirUndo').onclick = () => (S.tool === 'sketch' && S.draft ? sketchUndo() : doUndo());
   $('mUndo').onclick = () => (S.tool === 'sketch' && S.draft ? sketchUndo() : doUndo());
   $('mRedo').onclick = doRedo;
+  $('dirRedo').onclick = doRedo;
   $('mPrev').onclick = () => (S.tool === 'sketch' ? skmGo(-1) : gotoSeg(-1));
   $('mNext').onclick = () => (S.tool === 'sketch' ? skmGo(1) : gotoSeg(1, true));
   $('mClose').onclick = () => finishSketch(true);
@@ -2425,9 +2452,10 @@ function startBlankDraft() {
   const has = curItems().filter((i) => i.kind === 'sketch');
   let x = (b.bbox[0] + b.bbox[2]) / 2, y = (b.bbox[1] + b.bbox[3]) / 2;
   if (has.length) {
-    // следующая комната — справа от уже начерченных
+    // следующая комната — вплотную справа от последней начерченной (не в другом конце плана)
+    const lastR = has.slice().sort((a, b) => (b.t || 0) - (a.t || 0))[0];
     let mx = -Infinity, my = 0;
-    for (const it of has) for (let i = 0; i < it.pts.length; i += 2) { if (it.pts[i] > mx) { mx = it.pts[i]; my = it.pts[i + 1]; } }
+    for (let i = 0; i < lastR.pts.length; i += 2) { if (lastR.pts[i] > mx || (lastR.pts[i] === mx && lastR.pts[i + 1] > my)) { mx = lastR.pts[i]; my = lastR.pts[i + 1]; } }
     const th = S.settings.wallTh > 0 ? S.settings.wallTh / 100 : 0.5;
     x = mx + th / unitM(); y = my;
   }
@@ -2534,6 +2562,7 @@ function syncToolUI() {
   $('toolText').hidden = !S.settings.layers.text;
   $('btnRedo').hidden = !S.settings.layers.redoBtn;
   $('mRedo').hidden = !S.settings.layers.redoBtn;
+  $('dirRedo').hidden = !S.settings.layers.redoBtn;
   for (const b of $('tools').querySelectorAll('[data-tool]')) {
     const on = b.dataset.tool === S.tool;
     b.classList.toggle('on', on);
@@ -3916,6 +3945,7 @@ async function init() {
   if (session) Object.assign(S, { block: session.block, floor: session.floor ?? 1, dir: session.dir || 'down', toFloor: session.toFloor ?? 0 });
   S.plan = plan?.blocks ? plan : EMPTY_PLAN();
   // версия 2: встроенный план и старые замеры убираются (архив «Документы» не трогаем)
+  if (!S.settings.v23) { S.settings.layers.redoBtn = true; S.settings.v23 = true; }
   if (!S.settings.v2) {
     S.items = []; S.plan = EMPTY_PLAN(); S.settings.v2 = true; S.floor = 1;
     await DB.set('plan', S.plan); await DB.set('items', []); await DB.set('settings', S.settings);

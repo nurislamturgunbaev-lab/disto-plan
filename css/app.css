@@ -405,7 +405,7 @@ body.arrange [data-fl] { outline: 2px dashed var(--accent2); outline-offset: 2px
 
 /* левый пульт — одной строкой вдоль левого края, по середине экрана */
 /* чуть ниже середины, но никогда не вылезает за низ области плана (низкие экраны, телефон боком) */
-.dirPad { flex-direction: column !important; align-items: center; gap: 6px; top: clamp(8px, calc(50% - 7px), calc(100% - 262px)); bottom: auto !important; transform: none; }
+.dirPad { flex-direction: column !important; align-items: center; gap: 6px; top: clamp(8px, calc(50% - 30px), calc(100% - 314px)); bottom: auto !important; transform: none; }
 .dirPad .dRow { display: contents; }
 .dirPad .laserBtn { width: 48px; height: 46px; padding: 0; flex-direction: column; gap: 2px; font-size: 8px; order: 0; }
 .dirPad .dRow button[data-r="l"] { order: 1; } .dirPad .dRow button[data-r="s"] { order: 2; }
@@ -496,3 +496,6 @@ body.focus .mini { top: calc(10px + var(--safeT)); }
   body.focus .openPad button { width: 42px; height: 40px; }
   body.focus .openPad .doneBtn { height: 46px; }
 }
+
+.dirPad #dirRedo { order: 5; }
+.dirPad #dirRedo[hidden] { display: none; }
