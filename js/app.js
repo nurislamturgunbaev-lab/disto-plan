@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -606,7 +606,7 @@ function draw() {
   drawSnapMark(ctx, v, pal);
   // масштабная линейка
   scaleBar(ctx, v, pal);
-  if (shF != null) { ctx.fillStyle = pal.ink2; ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(`тень: ${shF} этаж`, 14, cv.clientHeight - 42); }
+  if (shF != null) { ctx.fillStyle = pal.ink2; ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(`тень: ${shF} этаж`, leftFree(), cv.clientHeight - 42); }
   if (S.selSeg || curItems().some((i) => i.value == null && i.kind === 'point')) requestDraw();
   updateProgress();
   syncMbar();
@@ -625,12 +625,19 @@ function drawEmpty() {
 }
 function requestDraw() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
 
+/** Отступ слева для подписей внизу плана: правее левого пульта, если он доходит до низа */
+function leftFree() {
+  const pad = $('dirPad');
+  if (!pad || !pad.offsetParent) return 14;
+  const r = pad.getBoundingClientRect(), cr = cv.getBoundingClientRect();
+  return r.bottom > cr.bottom - 50 ? Math.round(r.right - cr.left + 10) : 14;
+}
 function scaleBar(c, v, pal) {
   const um = unitM();
   const target = 110 / v.s * um; // метров на 110px
   const m = niceStep(target);
   const px = (m / um) * v.s;
-  const x = 14, y = cv.clientHeight - 18;
+  const x = leftFree(), y = cv.clientHeight - 18;
   c.strokeStyle = pal.ink; c.lineWidth = 2;
   c.beginPath(); c.moveTo(x, y - 5); c.lineTo(x, y); c.lineTo(x + px, y); c.lineTo(x + px, y - 5); c.stroke();
   c.fillStyle = pal.ink; c.font = '700 11px system-ui, sans-serif'; c.textAlign = 'left';
@@ -923,11 +930,13 @@ cv.addEventListener('wheel', (e) => {
   v.ox = p.x - (p.x - v.ox) * k; v.oy = p.y - (p.y - v.oy) * k; v.s *= k;
   requestDraw();
 }, { passive: false });
-let lastTap = 0;
+let lastTap = 0, lastTapP = null;
 let lastOpenTap = { id: null, t: 0 };
 function tap(p) {
   const now = Date.now();
-  const dbl = now - lastTap < 320; lastTap = now;
+  // двойное нажатие — только в то же место (быстрые нажатия по углам комнаты не должны обрывать линию)
+  const dbl = now - lastTap < 320 && lastTapP && Math.hypot(p.x - lastTapP.x, p.y - lastTapP.y) < 24;
+  lastTap = now; lastTapP = { x: p.x, y: p.y };
   if (S.openArm) {
     const it = placeOpening(S.openArm, p.x, p.y);
     if (it) { S.openArm = null; syncOpenPad(); }
@@ -1144,6 +1153,9 @@ function skmRecord(meters) {
   for (let k = 1; k <= n; k++) { const j = (i + k) % n; if (it.lens[j] == null) { next = j; break; } }
   if (next < 0) {
     toast(`Обмерено · S ${fmt(polyArea(it.pts) * unitM() * unitM())} м²` + (it.closed && it.gap >= 0.005 ? ` · невязка ${fmt(it.gap)} м` : ''));
+    // скопированный этаж: сразу к следующей комнате, где ещё нет замеров
+    const nx = curItems().find((o) => o.kind === 'sketch' && o.dirs && o.id !== it.id && o.lens.some((l) => l == null) && o.noDims);
+    if (nx) { const k0 = nx.lens.findIndex((l) => l == null); startSkm(nx, k0); toast(`Обмерено. Следующая комната — стена ${k0 + 1} из ${nx.dirs.length}`, true); draw(); return true; }
     afterRoomDone();
   } else { S.skm.i = next; toast(`${fmt(meters)} м → стена ${next + 1} из ${n}`); }
   draw();
@@ -2448,8 +2460,11 @@ function copyFloor(src, dst, mode, withOpen) {
     const c = JSON.parse(JSON.stringify(it)); c.id = uid(); c.floor = dst; add.push(c);
   }
   S.items.push(...add);
+  // «только линии»: сразу начинаем перемер скопированных стен по очереди, с первой
+  const first = mode === 'lines' && dst === S.floor ? add.find((c) => c.kind === 'sketch' && c.dirs?.length) : null;
+  if (first) { S.tool = 'sketch'; syncToolUI(); startSkm(first, 0); }
   save(); draw();
-  toast(`Этаж ${src} скопирован на этаж ${dst}` + (mode === 'lines' ? ' — только линии' : ' — с размерами'), true);
+  toast(`Этаж ${src} скопирован на этаж ${dst}` + (mode === 'lines' ? (first ? ' — меряйте стены лазером по очереди' : ' — только линии') : ' — с размерами'), true);
 }
 /** Окно «Копировать чертёж?» → { mode, open, src } или null */
 function askCopy(src, dst, pickSrc) {
@@ -2846,7 +2861,9 @@ function offerShare(file) {
     try { await navigator.share({ files: [file], title: file.name }); } catch (e) { /* отмена */ }
   };
 }
-const fileBase = (floorTxt) => `Блок_${S.block}_${floorTxt}_${stamp()}`;
+/** Имя файла без пробелов и спецсимволов: «ЖК_блок_А_этаж_16_…» */
+const safeName = (t) => String(t).replace(/\s*·\s*/g, '_').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+const fileBase = (floorTxt) => safeName(`${sheetHeader()}_${floorTxt}_${stamp()}`);
 
 function buildCsv() {
   const rows = listItems();
@@ -3290,7 +3307,7 @@ async function buildReportZip() {
     for (const b of S.plan.blocks) {
       if (!floorsWithData(b.name).length) continue;
       S.block = b.name;
-      files.push({ name: `Блок_${b.name}_все_этажи_мм.dxf`, blob: buildDxf(true) });
+      files.push({ name: safeName(`${sheetHeader()}_все_этажи_мм`) + '.dxf', blob: buildDxf(true) });
     }
     listScope = 'all';
     files.push({ name: `Замеры_${st}.csv`, blob: buildCsv() });

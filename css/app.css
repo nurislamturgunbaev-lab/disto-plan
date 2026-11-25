@@ -404,7 +404,8 @@ body.arrange [data-fl] { outline: 2px dashed var(--accent2); outline-offset: 2px
 .toast, .hint { pointer-events: none; }
 
 /* левый пульт — одной строкой вдоль левого края, по середине экрана */
-.dirPad { flex-direction: column !important; align-items: center; gap: 6px; top: 50%; bottom: auto !important; transform: translateY(calc(-50% + 120px)); }
+/* чуть ниже середины, но никогда не вылезает за низ области плана (низкие экраны, телефон боком) */
+.dirPad { flex-direction: column !important; align-items: center; gap: 6px; top: clamp(8px, calc(50% - 7px), calc(100% - 262px)); bottom: auto !important; transform: none; }
 .dirPad .dRow { display: contents; }
 .dirPad .laserBtn { width: 48px; height: 46px; padding: 0; flex-direction: column; gap: 2px; font-size: 8px; order: 0; }
 .dirPad .dRow button[data-r="l"] { order: 1; } .dirPad .dRow button[data-r="s"] { order: 2; }
@@ -442,3 +443,41 @@ body.focus .mini { top: calc(10px + var(--safeT)); }
 .cpBtns { margin-top: 10px; display: grid; grid-template-columns: 1fr 1.3fr; gap: 10px; }
 .cpBtns .btn { height: 50px; font-size: 16px; }
 #btnCopyFloor { margin-top: 6px; }
+
+/* ===== небольшие и широкие экраны ===== */
+/* узкий телефон (iPhone SE 1-го пок.) — верхняя строка влезает */
+@media (max-width: 360px) {
+  .subbar { gap: 5px; padding: 6px 6px; }
+  .subbar .seg button { padding: 0 7px; font-size: 13px; }
+  .subbar .chip { padding: 0 8px; }
+  .floor button { width: 34px; }
+}
+/* невысокий экран — мини-карта правее левого пульта, чтобы не перекрывались */
+@media (max-height: 700px) {
+  .mini { left: 66px; width: 96px; height: 96px; }
+}
+/* телефон боком: план слева на всю высоту, этаж и поле ввода — колонкой справа */
+@media (orientation: landscape) and (max-height: 540px) {
+  #app { display: grid; grid-template-columns: 1fr minmax(270px, 36vw); grid-template-rows: auto auto 1fr; }
+  .top { grid-column: 1 / -1; grid-row: 1; padding: calc(4px + var(--safeT)) max(10px, var(--safeR, 0px)) 4px max(10px, env(safe-area-inset-left, 0px)); }
+  .top .ic, .top .chip, .top button { min-height: 36px; }
+  .stage { grid-column: 1; grid-row: 2 / 4; }
+  .subbar { grid-column: 2; grid-row: 2; flex-wrap: wrap; align-content: flex-start; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .bottom { grid-column: 2; grid-row: 3; display: flex; flex-direction: column; justify-content: flex-end; border-top: 0; border-left: 1px solid var(--line); padding-right: env(safe-area-inset-right, 0px); overflow-y: auto; }
+  .mbar .mTools { flex-wrap: wrap; }
+  /* кнопки справа на плане — мельче и плотнее */
+  .flt { width: 40px; height: 40px; border-radius: 12px; right: 8px; }
+  .flt svg { width: 19px; height: 19px; }
+  .fit { bottom: 8px; } .orthoT { bottom: 52px; } .snapT { bottom: 96px; } .focusT { bottom: 140px; } .polarT { bottom: 184px; } .rotT { bottom: 228px; }
+  .hud { right: 56px; }
+  .compass { right: 56px; top: auto; bottom: 8px; }
+  /* левый пульт — у нижнего края, мини-карта справа от него */
+  .dirPad { top: auto !important; bottom: 8px !important; gap: 4px; }
+  .dirPad .dRow button, .dirPad .laserBtn { width: 44px; height: 42px; }
+  .mini { left: 62px; width: 92px; height: 92px; }
+  .sheet { left: auto; width: min(420px, 100%); max-height: 100%; border-radius: 20px 0 0 0; }
+  .hint { left: calc(50% + 28px); max-width: calc(100% - 120px); }
+  body.focus #app { display: flex; }
+  body.focus .compass { top: calc(8px + var(--safeT)); bottom: auto; right: 60px; }
+  body.focus .openPad { top: 50%; transform: translateY(-50%); }
+}
