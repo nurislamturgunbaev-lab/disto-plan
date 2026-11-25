@@ -408,7 +408,7 @@ body.arrange [data-fl] { outline: 2px dashed var(--accent2); outline-offset: 2px
 
 /* левый пульт — одной строкой вдоль левого края, по середине экрана */
 /* чуть ниже середины, но никогда не вылезает за низ области плана (низкие экраны, телефон боком) */
-.dirPad { flex-direction: column !important; align-items: center; gap: 6px; top: clamp(8px, calc(50% - 30px), calc(100% - 314px)); bottom: auto !important; transform: none; }
+.dirPad { flex-direction: column !important; align-items: center; gap: 6px; top: clamp(8px, calc(50% - 56px), calc(100% - 366px)); bottom: auto !important; transform: none; }
 .dirPad .dRow { display: contents; }
 .dirPad .laserBtn { width: 48px; height: 46px; padding: 0; flex-direction: column; gap: 2px; font-size: 8px; order: 0; }
 .dirPad .dRow button[data-r="l"] { order: 1; } .dirPad .dRow button[data-r="s"] { order: 2; }
@@ -536,4 +536,12 @@ body.focus .openPad .doneBtn { height: calc(var(--b) + 8px); }
 @media (orientation: landscape) and (max-height: 540px) {
   body.focus .openPad:not([hidden]) { top: calc(52px + var(--safeT)); transform: none; gap: 4px; --b: clamp(26px, calc((100dvh - 60px) / 10 - 4px), 40px); }
   body.focus .openPad small { display: none; }
+}
+
+/* гироскоп: кнопка над «сзади/спереди» */
+.dirPad .gyroBtn { order: -1; }
+.dirPad .gyroBtn.on { background: var(--accent2); color: #fff; }
+@media (max-height: 700px) {
+  .dirPad { gap: 4px !important; }
+  .dirPad .dRow button, .dirPad .laserBtn { height: 40px !important; }
 }

@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.5.3';
+const VERSION = '2.6.0';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -595,6 +595,7 @@ function draw() {
   drawTexts(ctx, S.block, S.floor, v, pal);
   drawRuler(ctx, v, pal);
   if (S.turnArm) drawTurnTip(ctx, v, pal);
+  if (GYRO.on && S.draft) drawGyroPreview(ctx, v);
   drawMini(pal);
   // черновик
   if (S.draft) {
@@ -1245,10 +1246,13 @@ function pickSketchSeg(sx, sy, closedOnly, tol = 18) {
 }
 /** Отрезок по направлению (кнопки) и длине с лазера */
 function sketchAppend(meters) {
-  const dir = sketchLastDir() + REL[S.sketchRel || 's'];
+  const gd = gyroDir();
+  const prevDir = sketchLastDir();
+  const dir = gd ?? prevDir + REL[S.sketchRel || 's'];
   const it = skAddSeg(dir, meters, true);
+  if (GYRO.on && GYRO.h != null) GYRO.last = { h: GYRO.h, id: it.id }; // телефон сейчас смотрит вдоль этой стены
   feedback();
-  toast(`${fmt(meters)} м · ${{ l: 'налево', s: 'прямо', r: 'направо' }[S.sketchRel || 's']}`);
+  toast(`${fmt(meters)} м · ` + (gd != null ? relText(normDeg(gd - prevDir)) + ' (по телефону)' : { l: 'налево', s: 'прямо', r: 'направо' }[S.sketchRel || 's']));
   // вернулись точно в начало — комната замкнута сама
   if (it.dirs.length >= 3) {
     const n = it.pts.length;
@@ -2080,6 +2084,71 @@ function relOf(diff) {
   for (const [k, v] of Object.entries(REL)) if (Math.abs(normDeg(diff - v)) < 20) return k;
   return null;
 }
+/* ---------- направление по телефону (гироскоп, работает без интернета) ---------- */
+const GYRO = { on: false, h: null, last: null, seen: false, t: 0 };
+/** Куда «смотрит» телефон в плане, градусы против часовой от востока.
+ *  Лежит плашмя — по верхнему краю; стоит — по задней камере (туда же светит DISTO рядом). */
+function phoneHeading(al, be, ga) {
+  const r = Math.PI / 180, a = al * r, b = be * r, g = ga * r;
+  const cA = Math.cos(a), sA = Math.sin(a), cB = Math.cos(b), sB = Math.sin(b), cG = Math.cos(g), sG = Math.sin(g);
+  const top = [-cB * sA, cA * cB, sB];
+  const back = [-(cG * sA * sB + cA * sG), -(sA * sG - cA * cG * sB), -cB * cG];
+  const v = Math.abs(top[2]) < Math.abs(back[2]) ? top : back; // берём ось, что ближе к горизонту
+  return (Math.atan2(v[1], v[0]) * 180) / Math.PI;
+}
+function onGyro(e) {
+  if (e.alpha == null) return;
+  GYRO.seen = true;
+  GYRO.h = phoneHeading(e.alpha, e.beta || 0, e.gamma || 0);
+  const now = performance.now();
+  if (GYRO.on && S.draft && now - GYRO.t > 90) { GYRO.t = now; requestDraw(); }
+}
+async function toggleGyro() {
+  if (GYRO.on) { GYRO.on = false; syncGyroBtn(); toast('Направление — кнопками', true); draw(); return; }
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== 'granted') { notice('Нет доступа к датчикам движения. Разрешите в Safari: «аА» → Настройки сайта → Движение и ориентация.'); return; }
+    }
+  } catch (e) { notice('Не удалось включить датчик поворота: ' + (e.message || e)); return; }
+  window.removeEventListener('deviceorientation', onGyro);
+  window.addEventListener('deviceorientation', onGyro);
+  GYRO.on = true; GYRO.last = null; syncGyroBtn();
+  toast('Направление по телефону: первую стену — кнопкой, дальше поворачивайтесь с телефоном и меряйте', true);
+  setTimeout(() => { if (GYRO.on && !GYRO.seen) { GYRO.on = false; syncGyroBtn(); notice('Датчик поворота не найден на этом устройстве.'); } }, 2500);
+}
+function syncGyroBtn() { $('gyroBtn').classList.toggle('on', GYRO.on); }
+/** Направление следующей линии по повороту телефона от прошлой стены (округление 90°, с «УГОЛ» — 5°) */
+function gyroDir() {
+  if (!GYRO.on || GYRO.h == null || !GYRO.last) return null;
+  const it = skItem();
+  if (!it?.dirs?.length || GYRO.last.id !== it.id) return null;
+  const step = S.settings.polar ? 5 : 90;
+  const rel = Math.round(normDeg(GYRO.h - GYRO.last.h) / step) * step;
+  return it.dirs[it.dirs.length - 1] + rel;
+}
+function relText(rel) {
+  rel = Math.round(normDeg(rel));
+  if (rel === 0) return 'прямо';
+  if (Math.abs(rel) === 180) return 'назад';
+  return (rel > 0 ? 'налево' : 'направо') + (Math.abs(rel) === 90 ? '' : ` ${Math.abs(rel)}°`);
+}
+/** Подсказка на плане: куда пойдёт следующая линия по телефону */
+function drawGyroPreview(c, v) {
+  const gd = gyroDir(); if (gd == null) return;
+  const f = draftFrom(); if (!f) return;
+  const a = w2s(f.x, f.y, v), r = (gd * Math.PI) / 180, rot = v.rot || 0;
+  const ang = -r + rot, L = 70;
+  const bx = a.x + Math.cos(ang) * L, by = a.y + Math.sin(ang) * L;
+  c.save(); c.strokeStyle = '#1f6feb'; c.lineWidth = 3; c.setLineDash([7, 5]); c.lineCap = 'round';
+  c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(bx, by); c.stroke(); c.setLineDash([]);
+  c.fillStyle = '#1f6feb'; c.beginPath();
+  c.moveTo(bx + Math.cos(ang) * 10, by + Math.sin(ang) * 10);
+  c.lineTo(bx + Math.cos(ang + 2.5) * 10, by + Math.sin(ang + 2.5) * 10);
+  c.lineTo(bx + Math.cos(ang - 2.5) * 10, by + Math.sin(ang - 2.5) * 10); c.fill();
+  pill(c, bx + Math.cos(ang) * 30, by + Math.sin(ang) * 30, '📱 ' + relText(gd - sketchLastDir()), '#1f6feb', '#fff', { size: 12 });
+  c.restore();
+}
 function sketchLastDir() {
   const it = skItem();
   if (it?.dirs.length) return it.dirs[it.dirs.length - 1];
@@ -2158,6 +2227,8 @@ function syncMbar() {
       const l = n ? it.lens[n - 1] ?? it.dlens[n - 1] : null;
       $('mVal').textContent = l != null ? fmt(l) + ' м' : '';
       on = S.sketchRel;
+      const gd = gyroDir();
+      if (gd != null) { const rr = Math.round(normDeg(gd - sketchLastDir())); on = rr === 0 ? 's' : rr === 90 ? 'l' : rr === -90 ? 'r' : null; }
     }
   }
   for (const b of document.querySelectorAll('#dirPad [data-r]')) b.classList.toggle('on', b.dataset.r === on);
@@ -2167,6 +2238,7 @@ function bindMbar() {
   $('dirUndo').onclick = () => (S.tool === 'sketch' && S.draft ? sketchUndo() : doUndo());
   $('mUndo').onclick = () => (S.tool === 'sketch' && S.draft ? sketchUndo() : doUndo());
   $('mRedo').onclick = doRedo;
+  $('gyroBtn').onclick = toggleGyro;
   $('dirRedo').onclick = doRedo;
   $('mPrev').onclick = () => (S.tool === 'sketch' ? skmGo(-1) : gotoSeg(-1));
   $('mNext').onclick = () => (S.tool === 'sketch' ? skmGo(1) : gotoSeg(1, true));
@@ -4072,6 +4144,6 @@ async function init() {
     $('homeTip').hidden = false;
     $('homeTipClose').onclick = () => { $('homeTip').hidden = true; try { localStorage.setItem('tipHome', '1'); } catch (e) { /* */ } };
   }
-  window.__app = { S, onMeasure, draw, w2s: (x, y) => w2s(x, y), sketchSegs }; // для отладки
+  window.__app = { S, onMeasure, draw, w2s: (x, y) => w2s(x, y), sketchSegs, GYRO }; // для отладки
 }
 init();
