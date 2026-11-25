@@ -481,3 +481,18 @@ body.focus .mini { top: calc(10px + var(--safeT)); }
   body.focus .compass { top: calc(8px + var(--safeT)); bottom: auto; right: 60px; }
   body.focus .openPad { top: 50%; transform: translateY(-50%); }
 }
+
+/* правка линии и «готово» */
+.openPad .edl, .openPad .doneBtn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; }
+.openPad .edl svg { width: 22px; height: 22px; }
+.openPad .edl small { font-size: 10px; font-weight: 800; line-height: 1; }
+.openPad .doneBtn { background: #16a34a; color: #fff; width: 48px; height: 56px; }
+.openPad .doneBtn svg { width: 24px; height: 24px; }
+.openPad .doneBtn small { font-size: 8px; font-weight: 800; letter-spacing: .3px; margin-top: 1px; }
+.openPad .edl[hidden], .openPad .doneBtn[hidden] { display: none; }
+.mTools .edl { color: var(--accent2); }
+@media (orientation: landscape) and (max-height: 540px) {
+  body.focus .openPad { gap: 5px; }
+  body.focus .openPad button { width: 42px; height: 40px; }
+  body.focus .openPad .doneBtn { height: 46px; }
+}

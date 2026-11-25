@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.3.0';
+const VERSION = '2.3.2';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -175,6 +175,7 @@ const curItems = () => S.items.filter((i) => i.block === S.block && i.floor === 
 
 /* ---------- приём замера (авто-запись) ---------- */
 function onMeasure(meters, src) {
+  S.viewFollow = true; // после замера вид подстраивается под текущую линию
   if (!blk()) { toast('Сначала создайте лист: «+» вверху'); return; }
   // лазер «спереди»: вычитаем длину прибора
   if (S.settings.laserRef === 'front') meters = Math.max(0, Math.round((meters - (S.settings.laserOffset ?? 0.13)) * 10000) / 10000);
@@ -985,6 +986,7 @@ function tap(p) {
       hint(`Размер №${it.no} (по чертежу ${fmt(it.design)} м) ждёт замер`);
     }
   } else if (S.tool === 'sketch') {
+    S.viewFollow = false; // рисуют пальцем — план не двигаем, иначе следующая точка «уедет»
     const d = S.draft;
     const nSeg = skItem()?.dirs.length || 0;
     if (!d || (nSeg === 0 && d.auto)) {
@@ -1139,7 +1141,7 @@ function askSkm(it, k, onYes, onNo) {
   });
 }
 /** Замер нарисованной линии/комнаты: стены по очереди */
-function startSkm(it, k) { S.skm = { id: it.id, i: k }; S.draft = null; hint(`Замер: стена ${k + 1} из ${it.dirs.length} — меряйте лазером`); draw(); }
+function startSkm(it, k) { S.viewFollow = true; S.skm = { id: it.id, i: k }; S.draft = null; hint(`Замер: стена ${k + 1} из ${it.dirs.length} — меряйте лазером`); draw(); }
 const skmItem = () => (S.skm ? S.items.find((i) => i.id === S.skm.id) : null);
 function skmRecord(meters) {
   const it = skmItem();
@@ -1164,7 +1166,7 @@ function skmRecord(meters) {
 function skmGo(step) {
   const it = skmItem(); if (!it) return;
   const n = it.dirs.length;
-  S.skm.i = (S.skm.i + step + n) % n; draw();
+  S.skm.i = (S.skm.i + step + n) % n; S.viewFollow = true; draw();
 }
 function skPrevDir(it, i) {
   if (i > 0) return it.dirs[i - 1];
@@ -1229,7 +1231,10 @@ function finishSketch(closed = false) {
   if (it && closed && it.dirs.length >= 2) { closeSketch(it, false); return; }
   S.draft = null;
   if (it) { save(); }
-  updateDraftBar(); hint(''); draw();
+  updateDraftBar(); hint('');
+  // начерченная линия — сразу замер её отрезков по очереди
+  if (it && it.dirs?.length && it.lens.some((l) => l == null)) { startSkm(it, it.lens.findIndex((l) => l == null)); return; }
+  draw();
 }
 function updateDraftBar() {
   $('draftbar').hidden = true; // управление линией — в нижней панели
@@ -2073,6 +2078,9 @@ function syncMbar() {
   mb.hidden = !mode;
   $('dirPad').hidden = !mode;
   $('openPad').hidden = !focusMode;
+  const canEdit = S.tool === 'sketch' && !!turnTarget() && (S.draft || S.skm);
+  for (const id of ['mFlip', 'mSplit', 'mDel', 'fsFlip', 'fsSplit', 'fsDel']) $(id).hidden = !canEdit;
+  $('fsDone').hidden = !(S.tool === 'sketch' && (S.skm || (S.draft && skItem()?.dirs?.length)));
   $('dpad').hidden = true;
   if (!mode) return;
   const isW = mode === 'walls';
@@ -2122,6 +2130,10 @@ function bindMbar() {
   syncLaserBtn();
   $('mMerge').onclick = () => $('shMerge').click();
   $('mMore').onclick = () => { S.sheetFull = true; refreshSheet(); };
+  $('mFlip').onclick = $('fsFlip').onclick = lineFlip;
+  $('mSplit').onclick = $('fsSplit').onclick = lineSplit;
+  $('mDel').onclick = $('fsDel').onclick = lineDel;
+  $('fsDone').onclick = lineDoneBtn;
   $('mStop').onclick = () => {
     if (S.tool === 'sketch') { S.skm = null; finishSketch(false); hint('Линия завершена'); return; }
     S.session = false; S.sheetFull = false; hint('Замер остановлен'); refreshSheet(); draw();
@@ -2622,6 +2634,7 @@ function stepRotation() {
   const v = V();
   if (gesture && gesture.type === 'turn') return false;
   const W = cv.clientWidth, H = cv.clientHeight;
+  if (!S.viewFollow && (S.settings.rotate || focusMode)) return false;
   let target = 0, head = null, tS = v.s, ax = W / 2, ay = H * 0.55;
   if (S.settings.rotate) {
     const d = currentDir(); if (d == null && !focusMode) return false;
@@ -2685,7 +2698,7 @@ function bindTools() {
   };
   $('btnFocus').onclick = () => setFocus(true);
   $('btnPolar').onclick = () => { S.settings.polar = !S.settings.polar; if (S.settings.polar) S.settings.ortho = false; syncSnapUI(); save(); toast('Полярные углы 5° ' + (S.settings.polar ? 'включены' : 'выключены')); };
-  $('btnRot').onclick = () => { S.settings.rotate = !S.settings.rotate; syncSnapUI(); save(); draw(); toast(S.settings.rotate ? 'Змейка: текущая линия в центре, план крутится вокруг неё' : 'Поворот плана выключен'); };
+  $('btnRot').onclick = () => { S.viewFollow = true; S.settings.rotate = !S.settings.rotate; syncSnapUI(); save(); draw(); toast(S.settings.rotate ? 'Змейка: текущая линия в центре, план крутится вокруг неё' : 'Поворот плана выключен'); };
   $('compass').onclick = () => { S.settings.rotate = false; syncSnapUI(); save(); draw(); };
   for (const b of $('openPad').querySelectorAll('[data-ot]')) b.onclick = () => {
     S.turnArm = false; S.openArm = S.openArm === b.dataset.ot ? null : b.dataset.ot; syncOpenPad();
@@ -2736,7 +2749,7 @@ const notice = (text) => ask(text, 'OK');
 let toastT;
 let focusMode = false;
 function setFocus(on) {
-  focusMode = on;
+  focusMode = on; S.viewFollow = true;
   document.body.classList.toggle('focus', on);
   if (on) {
     $('toolsPop').hidden = true;
@@ -3548,6 +3561,61 @@ function kpShow(angle = false) {
   $('kpUnit').textContent = angle ? '°' : 'м';
   $('kpOk').hidden = angle; $('kpTurn').hidden = !angle;
   $('keypad').hidden = false;
+}
+function editPrep() {
+  const tt = turnTarget();
+  if (!tt) { toast('Нет линии', true); return null; }
+  pushUndo(); return tt;
+}
+function editDone(it, msg) {
+  if (it.dirs.length) rebuildSketch(it);
+  if (S.draft?.itemId === it.id) S.draft.pts = it.pts.slice();
+  if (S.skm && S.skm.id === it.id) S.skm.i = Math.min(S.skm.i, it.dirs.length - 1);
+  S.viewFollow = true; save(); draw(); toast(msg, true);
+}
+/** Ошибся направлением: налево ↔ направо (линия и всё после неё зеркально поворачиваются) */
+function lineFlip() {
+  const tt = editPrep(); if (!tt) return;
+  const { it, k } = tt;
+  if (k === 0 && !it.closed) {
+    it.dirs[0] = (540 - it.dirs[0]) % 360;
+    for (let j = 1; j < it.dirs.length; j++) it.dirs[j] = (540 - it.dirs[j]) % 360;
+    editDone(it, 'Линия развернута в другую сторону'); return;
+  }
+  const rel = normDeg(it.dirs[k] - skPrevDir(it, k));
+  if (Math.abs(rel) < 0.01 || Math.abs(Math.abs(rel) - 180) < 0.01) { toast('Здесь линия идёт прямо — поворачивать некуда', true); return; }
+  const delta = -2 * rel;
+  for (let j = k; j < it.dirs.length; j++) it.dirs[j] = ((it.dirs[j] + delta) % 360 + 360) % 360;
+  editDone(it, rel > 0 ? 'Было налево — стало направо' : 'Было направо — стало налево');
+}
+/** Добавить линию: делит текущую пополам — новую точку можно повернуть кнопкой «угол» */
+function lineSplit() {
+  const tt = editPrep(); if (!tt) return;
+  const { it, k } = tt;
+  const L = it.lens[k] ?? it.dlens[k] ?? 1;
+  it.dirs.splice(k + 1, 0, it.dirs[k]);
+  it.dlens.splice(k, 1, L / 2, L / 2);
+  it.lens.splice(k, 1, null, null);
+  if (S.skm && S.skm.id === it.id) S.skm.i = k + 1; // новая (вторая) половина — текущая
+  editDone(it, 'Добавлена линия — поверните её кнопкой «угол» или стрелками');
+}
+/** Удалить текущую линию */
+function lineDel() {
+  const tt = editPrep(); if (!tt) return;
+  const { it, k } = tt;
+  it.dirs.splice(k, 1); it.dlens.splice(k, 1); it.lens.splice(k, 1);
+  if (!it.dirs.length) {
+    S.items = S.items.filter((o) => o !== it); S.skm = null;
+    if (S.draft?.itemId === it.id) S.draft = { kind: 'sketch', pts: it.start.slice() };
+    save(); draw(); toast('Линия удалена', true); return;
+  }
+  if (S.skm && S.skm.id === it.id && S.skm.i >= k && S.skm.i > 0) S.skm.i--;
+  editDone(it, 'Линия удалена');
+}
+function lineDoneBtn() {
+  if (S.tool !== 'sketch') return;
+  if (S.draft && skItem()?.dirs?.length) { finishSketch(false); toast('Линия закончена — меряйте отрезки лазером', true); return; }
+  S.skm = null; S.draft = null; hint(''); toast('Готово', true); draw();
 }
 /** Последняя линия: та, что сейчас чертится, или стена, которую сейчас меряем */
 function turnTarget() {
