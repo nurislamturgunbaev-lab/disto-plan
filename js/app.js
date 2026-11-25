@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.4.1';
+const VERSION = '2.4.3';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -2668,7 +2668,7 @@ function stepRotation() {
   if (S.settings.rotate) {
     const d = currentDir(); if (d == null && !focusMode) return false;
     if (d != null) { target = ((d - 90) * Math.PI) / 180; head = currentHead(); }
-  } else target = v.rot || 0; // без «змейки» поворот не трогаем
+  } else target = baseRot(); // без «змейки» — поворот кнопкой «90°»
   const ln = focusMode ? currentLine() : null;
   if (ln) {
     const len = Math.hypot(ln.b.x - ln.a.x, ln.b.y - ln.a.y);
@@ -2676,12 +2676,15 @@ function stepRotation() {
     if (!head) { head = { x: (ln.a.x + ln.b.x) / 2, y: (ln.a.y + ln.b.y) / 2 }; ax = W / 2; ay = H / 2; }
   }
   if (!S.settings.rotate && !ln) {
-    // поворот выключен — плавно вернуть север вверх
-    let diff = -(v.rot || 0);
+    // поворот выключен — плавно к повороту кнопки «90°» (обычно север вверх)
+    let diff = baseRot() - (v.rot || 0);
     while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
-    if (Math.abs(diff) < 0.002) { if (v.rot) v.rot = 0; return false; }
-    const c0 = screenToWorld(W / 2, H / 2, v);
-    v.rot = (v.rot || 0) + diff * 0.22; placeWorldAt(v, c0.x, c0.y, W / 2, H / 2);
+    if (Math.abs(diff) < 0.002) { v.rot = baseRot(); v.pivot = null; return false; }
+    // крутим вокруг середины чертежа, и он плавно встаёт в центр экрана
+    const c0 = v.pivot || screenToWorld(W / 2, H / 2, v);
+    const h = w2s(c0.x, c0.y, v);
+    v.rot = (v.rot || 0) + diff * 0.22;
+    placeWorldAt(v, c0.x, c0.y, v.pivot ? h.x + (W / 2 - h.x) * 0.22 : W / 2, v.pivot ? h.y + (H / 2 - h.y) * 0.22 : H / 2);
     return true;
   }
   if (!head) return false;
@@ -2698,6 +2701,18 @@ function stepRotation() {
   v.s *= Math.pow(ks, 0.22);
   placeWorldAt(v, head.x, head.y, h.x + dx * 0.22, h.y + dy * 0.22);
   return true;
+}
+/** Поворот чертежа кнопкой «90°» для текущего листа (радианы) */
+function baseRot() { return (((S.settings.baseRot || {})[S.block] || 0) * Math.PI) / 2; }
+function rotate90() {
+  const br = (S.settings.baseRot = S.settings.baseRot || {});
+  br[S.block] = ((br[S.block] || 0) + 1) % 4;
+  if (S.settings.rotate) { S.settings.rotate = false; syncSnapUI(); }
+  S.viewFollow = true; V().snakeDone = null;
+  const pts = curItems().filter((i) => i.kind === 'sketch' && i.pts).flatMap((i) => i.pts);
+  if (pts.length >= 2) { const b = bboxOf(pts); V().pivot = { x: (b[0] + b[2]) / 2, y: (b[1] + b[3]) / 2 }; }
+  save(); draw();
+  toast(br[S.block] ? `Чертёж повернут на ${br[S.block] * 90}°` : 'Чертёж как был: север вверху', true);
 }
 function syncCompass() {
   const r = V().rot || 0;
@@ -2728,7 +2743,9 @@ function bindTools() {
   $('btnFocus').onclick = () => setFocus(true);
   $('btnPolar').onclick = () => { S.settings.polar = !S.settings.polar; if (S.settings.polar) S.settings.ortho = false; syncSnapUI(); save(); toast('Полярные углы 5° ' + (S.settings.polar ? 'включены' : 'выключены')); };
   $('btnRot').onclick = () => { S.viewFollow = true; S.settings.rotate = !S.settings.rotate; syncSnapUI(); save(); draw(); toast(S.settings.rotate ? 'Змейка: текущая линия в центре, план крутится вокруг неё' : 'Поворот плана выключен'); };
-  $('compass').onclick = () => { S.settings.rotate = false; syncSnapUI(); save(); draw(); };
+  $('compass').onclick = () => { S.settings.rotate = false; (S.settings.baseRot = S.settings.baseRot || {})[S.block] = 0; S.viewFollow = true; syncSnapUI(); save(); draw(); };
+  $('btnRot90').onclick = rotate90;
+  $('fsRot90').onclick = rotate90;
   for (const b of $('openPad').querySelectorAll('[data-ot]')) b.onclick = () => {
     S.turnArm = false; S.openArm = S.openArm === b.dataset.ot ? null : b.dataset.ot; syncOpenPad();
   };

@@ -373,6 +373,7 @@ body.focus .compass { top: calc(48px + var(--safeT)); }
 .polarT { bottom: 264px; }
 .polarT b { font-size: 13px; }
 .rotT { bottom: 316px; }
+.rot90T { bottom: 368px; }
 body.focus .dirPad:not([hidden]) { display: flex !important; }
 
 /* крупные кнопки «закрыть» */
@@ -468,7 +469,7 @@ body.focus .mini { top: calc(10px + var(--safeT)); }
   /* кнопки справа на плане — мельче и плотнее */
   .flt { width: 40px; height: 40px; border-radius: 12px; right: 8px; }
   .flt svg { width: 19px; height: 19px; }
-  .fit { bottom: 8px; } .orthoT { bottom: 52px; } .snapT { bottom: 96px; } .focusT { bottom: 140px; } .polarT { bottom: 184px; } .rotT { bottom: 228px; }
+  .fit { bottom: 8px; } .orthoT { bottom: 52px; } .snapT { bottom: 96px; } .focusT { bottom: 140px; } .polarT { bottom: 184px; } .rotT { bottom: 228px; } .rot90T { bottom: 272px; }
   .hud { right: 56px; }
   .compass { right: 56px; top: auto; bottom: 8px; }
   /* левый пульт — у нижнего края, мини-карта справа от него */
@@ -492,10 +493,11 @@ body.focus .mini { top: calc(10px + var(--safeT)); }
 .openPad .edl[hidden], .openPad .doneBtn[hidden] { display: none; }
 .mTools .edl { color: var(--accent2); }
 @media (orientation: landscape) and (max-height: 540px) {
-  body.focus .openPad { gap: 5px; }
+  body.focus .openPad:not([hidden]) { gap: 5px; display: grid; grid-template-columns: repeat(2, 42px); grid-auto-flow: row; }
   body.focus .openPad button { width: 42px; height: 40px; }
   body.focus .openPad .doneBtn { height: 46px; }
 }
 
 .dirPad #dirRedo { order: 5; }
 .dirPad #dirRedo[hidden] { display: none; }
+
