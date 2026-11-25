@@ -501,3 +501,16 @@ body.focus .mini { top: calc(10px + var(--safeT)); }
 .dirPad #dirRedo { order: 5; }
 .dirPad #dirRedo[hidden] { display: none; }
 
+
+/* отправка: две большие кнопки */
+.sendTwo { display: grid; gap: 10px; margin: 10px 0 4px; }
+.sendBig { display: grid; grid-template-columns: 44px 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; text-align: left; padding: 14px 16px; border-radius: 16px; background: #229ED9; color: #fff; box-shadow: var(--shadow); }
+.sendBig:nth-child(2) { background: var(--card); color: var(--ink); border: 2px solid #229ED9; }
+.sendBig .sendIco { grid-row: 1 / 3; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,.22); display: grid; place-items: center; font-size: 22px; }
+.sendBig:nth-child(2) .sendIco { background: #229ED9; color: #fff; }
+.sendBig b { font-size: 17px; }
+.sendBig span:not(.sendIco) { font-size: 12px; opacity: .85; }
+.sendBig:active { transform: scale(.98); }
+.sendNote { text-align: center; margin: 4px 0 8px; }
+.moreFiles { margin-top: 6px; }
+.moreFiles summary { cursor: pointer; font-weight: 700; color: var(--ink2); padding: 8px 2px; }

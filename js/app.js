@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.4.3';
+const VERSION = '2.4.4';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -2732,7 +2732,7 @@ function bindTools() {
   $('btnList').onclick = () => { pop.hidden = true; $('menuModal').hidden = true; renderList(); $('listModal').hidden = false; };
   $('btnAreas').onclick = () => { pop.hidden = true; $('menuModal').hidden = true; renderAreas(); $('areasModal').hidden = false; };
   $('btnShare').onclick = () => { pop.hidden = true; $('menuModal').hidden = true; openShare(); };
-  $('btnReport').onclick = () => { pop.hidden = true; shareKind('tg', 'share'); };
+  $('btnReport').onclick = () => { pop.hidden = true; openShare(); };
   $('btnDocs').onclick = () => { pop.hidden = true; $('menuModal').hidden = true; renderDocs(); $('docsModal').hidden = false; };
   for (const b of $('snaps').children) b.onclick = () => {
     const k = b.dataset.snap;
@@ -3415,8 +3415,10 @@ async function shareKindInner(kind, mode) {
   await new Promise((r) => setTimeout(r, 30));
   let name, blob;
   try {
-    if (kind === 'tg') { busy(false); await shareBundle(); return; }
-    if (kind === 'pdf') { blob = buildPdf(true); name = fileBase('поэтажный_план') + '.pdf'; }
+    if (kind === 'tg' || kind === 'floor') { busy(false); await shareBundle('floor', mode); return; }
+    if (kind === 'all') { busy(false); await shareBundle('all', mode); return; }
+    if (kind === 'pdf1') { blob = buildPdf(false); name = fileBase('этаж_' + S.floor) + '.pdf'; }
+    else if (kind === 'pdf') { blob = buildPdf(true); name = fileBase('поэтажный_план') + '.pdf'; }
     else if (kind === 'full') { blob = await buildReportZip(); name = `Отчёт_${stamp()}.zip`; }
     else if (kind === 'fullpdf') { blob = buildFullReport(); name = `Полный_отчёт_${stamp()}.pdf`; }
     else if (kind === 'pdfall') { blob = buildPdf(true); name = fileBase('все_этажи') + '.pdf'; }
@@ -3433,25 +3435,30 @@ async function shareKindInner(kind, mode) {
   await deliver(name, blob, mode);
 }
 /** Telegram: собрать файлы (PDF поэтажный, DXF этажа, DXF всех этажей) и открыть «Поделиться» */
-async function shareBundle() {
+/** Отправка: scope 'all' — все этажи (PDF + DXF всех этажей), 'floor' — только текущий этаж (PDF + DXF этажа) */
+async function shareBundle(scope = 'floor', mode = 'share') {
   if (!blk()) { toast('Сначала создайте лист'); return; }
   busy(true, 'Собираю файлы…');
   await new Promise((r) => setTimeout(r, 30));
   const files = [];
   try {
-    const fl = floorsWithData();
-    files.push(new File([buildPdf(true)], fileBase('поэтажный_план') + '.pdf', { type: 'application/pdf' }));
-    files.push(new File([buildDxf(false)], fileBase('этаж_' + S.floor) + '.dxf', { type: 'application/dxf' }));
-    if (fl.length > 1) files.push(new File([buildDxf(true)], fileBase('все_этажи') + '.dxf', { type: 'application/dxf' }));
+    if (scope === 'all') {
+      files.push(new File([buildPdf(true)], fileBase('все_этажи') + '.pdf', { type: 'application/pdf' }));
+      files.push(new File([buildDxf(true)], fileBase('все_этажи_мм') + '.dxf', { type: 'application/dxf' }));
+    } else {
+      files.push(new File([buildPdf(false)], fileBase('этаж_' + S.floor) + '.pdf', { type: 'application/pdf' }));
+      files.push(new File([buildDxf(false)], fileBase('этаж_' + S.floor + '_мм') + '.dxf', { type: 'application/dxf' }));
+    }
   } finally { busy(false); }
   for (const f of files) addDoc(f.name, f);
+  if (mode === 'save') { for (const f of files) await deliver(f.name, f, 'save'); return; }
   if (navigator.canShare?.({ files })) {
     try { await navigator.share({ files, title: sheetHeader() }); return; }
     catch (e) { if (e.name === 'AbortError') return; if (e.name === 'NotAllowedError') { offerShareFiles(files); return; } }
   }
   // если телефон не пропускает DXF — один ZIP со всеми файлами
   const zip = await zipMany(files.map((f) => ({ name: f.name, blob: f })));
-  await deliver(fileBase('файлы') + '.zip', zip, 'share');
+  await deliver(fileBase(scope === 'all' ? 'все_этажи' : 'этаж_' + S.floor) + '.zip', zip, 'share');
 }
 function offerShareFiles(files) {
   const bar = $('readyBar');
@@ -3466,6 +3473,8 @@ function openShare() {
   $('shareScope').textContent = `${sheetHeader()} · этаж ${S.floor}` + (fl.length ? ` · этажей с замерами: ${fl.length}` : ' · замеров пока нет');
   const all = document.querySelector('.shareItem[data-kind=dxfall]');
   all.disabled = fl.length <= 1; all.classList.toggle('off', fl.length <= 1);
+  $('sendFloorT').textContent = `Отправить этаж ${S.floor}`;
+  $('sendAllSub').textContent = fl.length > 1 ? `PDF и DXF — этажи ${fl.slice().sort((a, b) => a - b).join(', ')}` : 'PDF и DXF — пока замерен один этаж';
   $('shareModal').hidden = false;
 }
 function renderAreas() {
@@ -3849,6 +3858,8 @@ function bindMenu() {
     for (const o of $('shareMode').children) o.classList.toggle('on', o === b);
   };
   for (const b of document.querySelectorAll('.shareItem')) b.onclick = () => shareKind(b.dataset.kind, shareMode);
+  $('sendAll').onclick = () => { $('shareModal').hidden = true; shareKind('all', shareMode); };
+  $('sendFloor').onclick = () => { $('shareModal').hidden = true; shareKind('floor', shareMode); };
   $('areasPdf').onclick = () => shareKind('tg', 'share');
   $('areasPdfSave').onclick = () => shareKind('pdf', 'save');
   $('filePlan').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) loadPlanFile(f); };

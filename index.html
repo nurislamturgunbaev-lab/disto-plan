@@ -384,21 +384,27 @@
 <!-- Сохранить / отправить -->
 <div class="modal" id="shareModal" hidden>
   <div class="panel narrow">
-    <div class="panelHead"><h2>Сохранить или отправить</h2><button class="ic ghost" data-close>✕</button></div>
+    <div class="panelHead"><h2>Отправить</h2><button class="ic ghost" data-close>✕</button></div>
     <p class="muted small" id="shareScope"></p>
     <div class="seg wide" id="shareMode">
       <button data-mode="share" class="on">Отправить (Telegram…)</button>
       <button data-mode="save">Сохранить на телефон</button>
     </div>
+    <div class="sendTwo">
+      <button class="sendBig" id="sendAll"><span class="sendIco">✈</span><b>Отправить все этажи</b><span id="sendAllSub">PDF всех этажей + DXF всех этажей</span></button>
+      <button class="sendBig" id="sendFloor"><span class="sendIco">✈</span><b id="sendFloorT">Отправить этаж</b><span>PDF этажа + DXF этажа</span></button>
+    </div>
+    <p class="muted small sendNote">Откроется список приложений — выберите Telegram или куда удобно.</p>
+    <details class="moreFiles"><summary>Другие файлы по одному</summary>
     <div class="shareList">
-      <button class="shareItem main" data-kind="tg"><b>✈ Telegram — собрать файлы</b><span>PDF поэтажный план + DXF этажа + DXF всех этажей (если их больше одного). Куда отправить — выберете сами</span></button>
-      <button class="shareItem" data-kind="pdf"><b>PDF поэтажный план</b><span>Каждый этаж с замерами — отдельный лист A4/A3 с масштабом</span></button>
+      <button class="shareItem" data-kind="pdfall"><b>PDF всех этажей</b><span>Каждый этаж с замерами — отдельный лист A4/A3 с масштабом</span></button>
+      <button class="shareItem" data-kind="pdf1"><b>PDF этажа</b><span>Только текущий этаж</span></button>
       <button class="shareItem" data-kind="dxf"><b>DXF этажа (AutoCAD, мм)</b><span>Чертёж — красным, замеры — зелёным</span></button>
       <button class="shareItem" data-kind="dxfall"><b>DXF всех этажей (мм)</b><span>Только этажи, где есть замеры</span></button>
       <button class="shareItem" data-kind="png"><b>Картинка PNG</b><span>Поэтажный план этажа</span></button>
       <button class="shareItem" data-kind="json"><b>Копия данных</b><span>Резервная копия всех листов и замеров</span></button>
     </div>
-    <p class="muted small">«Отправить» открывает список приложений телефона: выберите Telegram или куда удобно.</p>
+    </details>
   </div>
 </div>
 
