@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.6.2';
+const VERSION = '2.6.3';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -576,6 +576,7 @@ function handle(c, p, pal) {
 }
 
 let snapMark = null;
+let lastPtrType = 'touch';
 function draw() {
   if (!S.plan || !lastSize) return;
   if (!blk()) { drawEmpty(); return; }
@@ -665,7 +666,11 @@ function snapSegments() {
   const extra = [];
   for (const it of curItems()) {
     if (it.kind === 'line') extra.push(it.x, it.y, it.x2, it.y2);
-    else if (it.kind === 'sketch') for (let i = 0; i + 3 < it.pts.length; i += 2) extra.push(it.pts[i], it.pts[i + 1], it.pts[i + 2], it.pts[i + 3]);
+    else if (it.kind === 'sketch') {
+      for (let i = 0; i + 3 < it.pts.length; i += 2) extra.push(it.pts[i], it.pts[i + 1], it.pts[i + 2], it.pts[i + 3]);
+      // замкнутая комната: и последняя стена (от последней точки к началу)
+      if (it.closed && it.pts.length >= 6) { const n = it.pts.length; extra.push(it.pts[n - 2], it.pts[n - 1], it.pts[0], it.pts[1]); }
+    }
   }
   return [P.segFlat, extra];
 }
@@ -675,7 +680,7 @@ function snap(sx, sy, from) {
   let w = screenToWorld(sx, sy, v);
   snapMark = null;
   const M = S.settings.snapModes;
-  const R = 16 / v.s;
+  const R = (lastPtrType === 'mouse' ? 16 : 26) / v.s; // пальцем — зона привязки больше
   if (S.settings.snap) {
     let best = null, bd = R, rank = 9;
     const cand = (x, y, type, rk) => {
@@ -801,6 +806,7 @@ let gesture = null;
 function local(e) { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
 
 cv.addEventListener('pointerdown', (e) => {
+  lastPtrType = e.pointerType || 'touch';
   if (!blk()) { openNewSheet(); return; }
   cv.setPointerCapture(e.pointerId);
   const p = local(e);
@@ -2679,6 +2685,7 @@ function syncSnapUI() {
   }
   $('btnSnap').classList.toggle('on', !!S.settings.snap);
   $('btnOrtho').classList.toggle('on', !!S.settings.ortho);
+  if ($('fsSnap')) $('fsSnap').classList.toggle('on', !!S.settings.snap);
   if ($('gyroOrtho')) $('gyroOrtho').classList.toggle('on', !!S.settings.ortho);
   $('btnPolar').classList.toggle('on', !!S.settings.polar);
   $('btnRot').classList.toggle('on', !!S.settings.rotate);
@@ -2879,6 +2886,7 @@ function bindTools() {
   $('btnRect').onclick = () => { $('toolsPop').hidden = true; addRectRoom(); };
   $('fsRect').onclick = addRectRoom;
   $('fsSnake').onclick = () => $('btnRot').click();
+  $('fsSnap').onclick = () => { $('btnSnap').click(); toast('Привязка ' + (S.settings.snap ? 'включена' : 'выключена'), true); };
   $('fsRot90').onclick = rotate90;
   for (const b of $('openPad').querySelectorAll('[data-ot]')) b.onclick = () => {
     S.turnArm = false; S.openArm = S.openArm === b.dataset.ot ? null : b.dataset.ot; syncOpenPad();

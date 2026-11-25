@@ -529,12 +529,12 @@ body:has(.modal:not([hidden])) .toast { opacity: 0; }
 #dirSeg[hidden], #toFloorChip[hidden] { display: none !important; }
 
 /* правый пульт полного экрана — всегда одной колонкой; кнопки сжимаются под высоту экрана */
-body.focus .openPad:not([hidden]) { display: flex; flex-direction: column; gap: 5px; --b: clamp(32px, calc((100dvh - var(--safeT) - 150px) / 10 - 5px), 46px); }
+body.focus .openPad:not([hidden]) { display: flex; flex-direction: column; gap: 5px; --b: clamp(30px, calc((100dvh - var(--safeT) - 150px) / 11 - 5px), 46px); }
 body.focus .openPad button { width: var(--b); height: var(--b); border-radius: 12px; }
 body.focus .openPad button svg { width: calc(var(--b) * .48); height: calc(var(--b) * .48); }
 body.focus .openPad .doneBtn { height: calc(var(--b) + 8px); }
 @media (orientation: landscape) and (max-height: 540px) {
-  body.focus .openPad:not([hidden]) { top: calc(52px + var(--safeT)); transform: none; gap: 4px; --b: clamp(26px, calc((100dvh - 60px) / 10 - 4px), 40px); }
+  body.focus .openPad:not([hidden]) { top: calc(52px + var(--safeT)); transform: none; gap: 4px; --b: clamp(24px, calc((100dvh - 60px) / 11 - 4px), 40px); }
   body.focus .openPad small { display: none; }
 }
 
