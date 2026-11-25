@@ -529,3 +529,4 @@ body:has(.modal:not([hidden])) .toast { opacity: 0; }
 @media (orientation: portrait) and (max-height: 860px) {
   body.focus .openPad:not([hidden]) { display: grid; grid-template-columns: repeat(2, 48px); gap: 7px; }
 }
+#dirSeg[hidden], #toFloorChip[hidden] { display: none !important; }
