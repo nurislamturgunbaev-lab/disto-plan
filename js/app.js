@@ -4,7 +4,7 @@ import { buildWalls, asBuilt } from './walls.js';
 import { canvasesToPdf } from './pdf.js';
 import { zipOne, zipMany } from './zip.js';
 
-const VERSION = '2.5.2';
+const VERSION = '2.5.3';
 const EMPTY_PLAN = () => ({ name: 'Проект', unit: 'cm', blocks: [] });
 const $ = (id) => document.getElementById(id);
 const BASE = new URL('../', import.meta.url).href;
@@ -1004,7 +1004,7 @@ function tap(p) {
       // нажали на угол комнаты — новая комната начинается из этого угла (рядом с прежней, план не сдвигается)
       const cn = pickCorner(p.x, p.y, 16);
       if (cn) {
-        S.skm = null; S.draft = { kind: 'sketch', pts: [cn.x, cn.y] };
+        S.skm = null; S.draft = { kind: 'sketch', pts: [cn.x, cn.y], corner: cn.id };
         hint('Начало новой комнаты — из угла. Направление + лазер, или нажимайте точки'); draw(); return;
       }
       // нажали на середину стены — сразу её перемер
@@ -1081,6 +1081,7 @@ function skAddSeg(dirDeg, lenM, measured) {
     pushUndo();
     it = { id: uid(), kind: 'sketch', start: [d.pts[0], d.pts[1]], dirs: [], lens: [], dlens: [], pts: [d.pts[0], d.pts[1]], block: S.block, floor: S.floor, t: Date.now() };
     if (d.auto) it.autoStart = true; // начало поставлено автоматически (лазером без нажатия)
+    if (d.corner) it.cornerOf = d.corner; // начата из угла соседней комнаты
     S.items.push(it); d.itemId = it.id;
   } else pushUndo();
   d.auto = false;
@@ -1125,11 +1126,31 @@ function separateRoom(it) {
   rebuildSketch(it);
   for (const o of S.items) if (o.kind === 'open' && o.key?.startsWith(`sk:${it.id}:`)) { /* проёмы привязаны к стенам — сдвигаются вместе */ }
 }
+/** Комната начата из угла соседней: отодвинуть её на толщину стены, чтобы между ними была стена, а не наложение */
+function wallGapFromNeighbour(it) {
+  const th = S.settings.wallTh > 0 ? S.settings.wallTh / 100 / unitM() : 0;
+  if (!it.cornerOf || !(th > 0) || it.wallGapDone) return;
+  const nb = S.items.find((o) => o.id === it.cornerOf);
+  if (!nb?.pts) return;
+  const a = bboxOf(nb.pts), b = bboxOf(it.pts);
+  const ca = [(a[0] + a[2]) / 2, (a[1] + a[3]) / 2], cb = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
+  const rx = Math.abs(cb[0] - ca[0]) / Math.max((a[2] - a[0]) + (b[2] - b[0]), 1e-9);
+  const ry = Math.abs(cb[1] - ca[1]) / Math.max((a[3] - a[1]) + (b[3] - b[1]), 1e-9);
+  let dx = 0, dy = 0;
+  if (rx >= ry) dx = cb[0] >= ca[0] ? a[2] + th - b[0] : a[0] - th - b[2];
+  else dy = cb[1] >= ca[1] ? a[3] + th - b[1] : a[1] - th - b[3];
+  if (Math.abs(dx) + Math.abs(dy) < 1e-9) return;
+  it.start = [it.start[0] + dx, it.start[1] + dy];
+  it.wallGapDone = true;
+  rebuildSketch(it);
+  toast(`Комната отодвинута на толщину стены ${S.settings.wallTh} см`, true);
+}
 function closeSketch(it, viaTap) {
   it.closed = true;
   if (viaTap) makeCCW(it);
   rebuildSketch(it);
   separateRoom(it);
+  wallGapFromNeighbour(it);
   S.draft = null;
   save();
   const open = it.lens.findIndex((v) => v == null);
@@ -1151,7 +1172,7 @@ function pickCorner(sx, sy, tol) {
     if (it.kind !== 'sketch' || !it.pts) continue;
     for (let i = 0; i < it.pts.length; i += 2) {
       const q = w2s(it.pts[i], it.pts[i + 1]), d = Math.hypot(q.x - sx, q.y - sy);
-      if (d < bd) { bd = d; best = { x: it.pts[i], y: it.pts[i + 1] }; }
+      if (d < bd) { bd = d; best = { x: it.pts[i], y: it.pts[i + 1], id: it.id }; }
     }
   }
   return best;
